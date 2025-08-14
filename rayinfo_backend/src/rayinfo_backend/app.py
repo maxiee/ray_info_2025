@@ -17,51 +17,40 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 
-logger = logging.getLogger("rayinfo")
-logging.basicConfig(
-    level=logging.INFO, format="[%(asctime)s] %(levelname)s %(name)s: %(message)s"
-)
+from .utils.logging import setup_logging
+from .scheduling.scheduler import SchedulerAdapter
 
-# 全局调度器（也可改为依赖注入方式）
-scheduler: AsyncIOScheduler | None = None
+logger = setup_logging()
 
-
-def demo_job():
-    """示例定时任务：打印心跳。实际项目中替换为抓取等逻辑。"""
-    logger.info("[demo_job] heartbeat")
+adapter: SchedulerAdapter | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 兼容)
     """应用生命周期：启动调度器 & 关闭清理。"""
-    global scheduler
+    global adapter
     logger.info("Application starting ...")
 
-    # 初始化调度器
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        demo_job, IntervalTrigger(seconds=30), id="demo_job", replace_existing=True
-    )
-    scheduler.start()
-    logger.info("Scheduler started with jobs: %s", scheduler.get_jobs())
+    # 触发 collectors 注册
+    from .collectors import weibo  # noqa: F401
+
+    adapter = SchedulerAdapter()
+    adapter.load_all_collectors()
+    adapter.start()
+    logger.info("Scheduler started")
 
     try:
         yield
     finally:
         logger.info("Application shutting down ...")
-        if scheduler:
-            # 优雅关闭：等待正在运行的 job 完成（可设置超时）
-            await _shutdown_scheduler(scheduler)
+        if adapter:
+            adapter.shutdown()
             logger.info("Scheduler stopped.")
 
 
-async def _shutdown_scheduler(s: AsyncIOScheduler):
-    s.shutdown(wait=False)
-    # 等待短暂时间让后台任务收尾（根据需要调整）
-    await asyncio.sleep(0.1)
+async def _shutdown_scheduler():  # 兼容旧接口，暂不使用
+    await asyncio.sleep(0.05)
 
 
 app = FastAPI(title="RayInfo Backend", lifespan=lifespan)
