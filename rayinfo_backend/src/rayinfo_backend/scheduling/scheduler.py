@@ -36,15 +36,11 @@ class SchedulerAdapter:
         interval = collector.default_interval_seconds or 60
         job_id = collector.name
 
-        async def job_wrapper():  # 封装为 async job
+        async def job_wrapper():  # APScheduler (AsyncIOScheduler) 可直接调度协程函数
             await self.run_collector_once(collector)
 
-        # APScheduler 需要调用可调用对象, async 用 asyncio.create_task 包装
-        def synced():
-            asyncio.create_task(job_wrapper())
-
         self.scheduler.add_job(
-            synced,
+            job_wrapper,  # 直接传入协程函数; AsyncIOScheduler 会在其事件循环中 create_task
             IntervalTrigger(seconds=interval),
             id=job_id,
             replace_existing=True,
