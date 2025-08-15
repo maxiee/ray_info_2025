@@ -30,7 +30,7 @@ RayInfo 由前后端两部分组成：
 6. 任务爆炸可控：支持“参数化 Collector” -> 任务拆分 / 分片 / 节流 / 回压。
 7. 失败自愈：指数退避 + jitter、幂等写入、断点续跑（分页游标、时间窗口）。
 
-### 采集架构设计
+### 目录结构
 
 ```
 __init__.py           # 标记这个目录是一个 Python 包
@@ -98,24 +98,24 @@ Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> �
 8. BrowserPool (Playwright)
 	 - 复用浏览器上下文；Collector 通过上下文工厂获取 page
 
-### APScheduler 集成策略
+### APScheduler 调度器
+
+集成策略：
 
 1. 启动流程：
 	 - 加载配置 -> 初始化 CollectorRegistry -> 初始化 Pipeline -> 初始化 SchedulerAdapter。
 	 - 调用 job_loader.sync()：从 task_repo / 配置生成 TaskDefinition 集合。
 	 - 为每个 TaskDefinition 调用 adapter.add_or_update_job()。
-2. 动态变化：
-	 - 配置热更新（轮询或 Webhook） -> 重新 diff TaskDefinition -> 调整 APScheduler 任务。
-	 - 参数化 Collector（如 weibo.user_feed）不直接为每个用户创建重量级任务：
-		 a. 维护一个“参数聚合 Job”（例如 1 分钟执行）
-		 b. 该 Job 内部根据策略对用户参数切片，批处理（batch）或生成内部并发协程
-		 c. 子任务级别的重试由内部协程策略处理，不放大 APScheduler 任务数。
-3. Job ID 规范：
+2. Job ID 规范：
 	 - 静态 Collector: `{collector_name}` （如 weibo.home）
 	 - 聚合/参数化调度 Job: `{collector_name}:aggregator`
-4. 失败策略：
+3. 失败策略：
 	 - APScheduler job 级失败：记录失败计数，超阈值 -> 降级（暂停 / 降频）
 	 - 采集内部异常：按照粒度：网络/速率限制 -> backoff；解析错误 -> 计数并告警；身份失效 -> 触发 re-login 流程。
+
+约束限制：
+
+- 调度器仅在首次启动时完成初始化，运行期间不支持动态增删 / 频率调整；如需修改 Collector 频率或启停，需要更新配置并重启服务重新装载。
 
 ### 任务参数化与分片（微博 user_feed 示例）
 
