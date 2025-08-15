@@ -18,7 +18,7 @@ RayInfo 由前后端两部分组成：
 - 数据库： SQLite
 - 运行环境： Mac Mini M4 (通过uvicorn长期运行)，通过 tailscale 组成内网 + 公网暴露
 
-## 采集架构设计（Draft v0.1）
+### 采集架构设计
 
 本章节聚焦后端“采集器（Collector）”体系与调度集成方案，目标是在未来支持大量异构来源（微博 / X / RSS / 定制站点），并具备：
 
@@ -30,39 +30,7 @@ RayInfo 由前后端两部分组成：
 6. 任务爆炸可控：支持“参数化 Collector” -> 任务拆分 / 分片 / 节流 / 回压。
 7. 失败自愈：指数退避 + jitter、幂等写入、断点续跑（分页游标、时间窗口）。
 
-### 总体数据流（逻辑层次）
-
-Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> 富化(补充元数据) -> 持久化) -> 出口(数据库 / 队列 / Webhook)
-
-### 核心抽象
-
-1. BaseCollector
-	 - name: 唯一名称（如 weibo.home, weibo.user_feed）
-	 - mode: one-shot / streaming / parameterized
-	 - supports_parameters: bool
-	 - fetch(context: CollectorContext, param: TaskParam | None) -> Iterable[RawEvent]
-	 - state 序列化（分页游标、上次时间戳）可选：load_state() / save_state()
-2. TaskDefinition
-	 - collector_name, param_hash, schedule (cron/interval)、enabled、priority、retry_policy
-3. TaskInstance（运行态）
-	 - id（= f"{collector_name}:{param_hash}:{epoch_ts}"）
-	 - tracing_id, attempts, next_backoff
-4. PipelineStage
-	 - process(records: list[Record]) -> list[Record]
-	 - 类型：DeduplicateStage, EnrichStage, PersistStage 等
-5. CollectorRegistry
-	 - 注册 / 发现 Collector
-	 - 提供 metadata: version, default_schedule, parameter_schema
-6. SchedulerAdapter（封装 APScheduler）
-	 - add_or_update_job(TaskDefinition)
-	 - remove_job(id)
-	 - event hooks: on_job_error, on_job_missed, on_job_executed
-7. RateLimiter / ConcurrencyController
-	 - 基于 token bucket + per-domain 限制
-8. BrowserPool (Playwright)
-	 - 复用浏览器上下文；Collector 通过上下文工厂获取 page
-
-### 目录结构建议
+#### 目录结构建议
 
 ```
 rayinfo_backend/
@@ -126,6 +94,38 @@ rayinfo_backend/
 			metrics.py
 			tracing.py
 ```
+
+### 总体数据流（逻辑层次）
+
+Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> 富化(补充元数据) -> 持久化) -> 出口(数据库 / 队列 / Webhook)
+
+#### 核心抽象
+
+1. BaseCollector
+	 - name: 唯一名称（如 weibo.home, weibo.user_feed）
+	 - mode: one-shot / streaming / parameterized
+	 - supports_parameters: bool
+	 - fetch(context: CollectorContext, param: TaskParam | None) -> Iterable[RawEvent]
+	 - state 序列化（分页游标、上次时间戳）可选：load_state() / save_state()
+2. TaskDefinition
+	 - collector_name, param_hash, schedule (cron/interval)、enabled、priority、retry_policy
+3. TaskInstance（运行态）
+	 - id（= f"{collector_name}:{param_hash}:{epoch_ts}"）
+	 - tracing_id, attempts, next_backoff
+4. PipelineStage
+	 - process(records: list[Record]) -> list[Record]
+	 - 类型：DeduplicateStage, EnrichStage, PersistStage 等
+5. CollectorRegistry
+	 - 注册 / 发现 Collector
+	 - 提供 metadata: version, default_schedule, parameter_schema
+6. SchedulerAdapter（封装 APScheduler）
+	 - add_or_update_job(TaskDefinition)
+	 - remove_job(id)
+	 - event hooks: on_job_error, on_job_missed, on_job_executed
+7. RateLimiter / ConcurrencyController
+	 - 基于 token bucket + per-domain 限制
+8. BrowserPool (Playwright)
+	 - 复用浏览器上下文；Collector 通过上下文工厂获取 page
 
 ### APScheduler 集成策略
 
