@@ -181,12 +181,108 @@ rayinfo_backend/
 
 ### Pipeline 设计
 
+可组合的处理链（Pipeline），可理解为一个传送带。输入是一组 `RawEvent`，依次经过多个 Stage 函数式处理，输出仍是一组 `RawEvent`（内容可能被过滤或增强）。
+
+通俗解释：想象有一条“信息传送带”。Collector 把刚捞上来的“原始信息石块”一把倒在传送带起点。沿路有一排小工位（Stage）：
+
+1. 有的负责挑掉重复的石块（去重）。
+2. 有的给石块贴标签、补备注（富化）。
+3. 最后一个把合格的石块整齐放进仓库（持久化）。
+
+传送带按顺序走，每个工位只专心做一件简单事。这样：
+
+- 新加或调整步骤，只要“增 / 删 / 换”一个工位，不影响其它。
+- 上游 Collector 不需要关心存库细节；下游也不用懂抓取逻辑。
+- 以后要更快，只需让某些工位并行或换成更高级工具。
+
 串行阶段 + 背压：
+
 1. DedupStage：用哈希指纹 (hash(normalized_text + author + ts))，BloomFilter 或 LRU Set。
 2. EnrichStage：补充来源平台、语言检测、URL 展开。
 3. PersistStage：批量写入数据库（事务 or 批插入）。
 
 Pipeline 可配置（settings.PIPELINE_STAGES = ["dedup", "enrich", "persist"]）。
+
+代码位置：`rayinfo_backend/src/rayinfo_backend/pipelines/base.py`
+
+抽象示意：
+
+```
+RawEvent List -> [Stage1] -> [Stage2] -> ... -> [StageN] -> Final List
+```
+
+核心类：
+
+- `PipelineStage`: 抽象基类，定义 `process(events: list[RawEvent]) -> list[RawEvent]`。约定：
+	- 输入/输出均为列表；
+	- Stage 内部可以过滤、修改、扩展事件；
+	- 建议保持幂等（同一输入多次执行结果一致），利于重放 / 重试；
+	- 不直接抛出未分类异常，应该转换为可观测错误或记录并跳过；
+- `DedupStage`: 维持一个内存内 `_seen` 容器（滑动窗口），根据 `post_id`（或原始内容字符串散列）去重；
+- `PersistStage`: 目前只是打印（占位），后续会替换为批量持久化逻辑（事务、重试、幂等键约束）。
+- `Pipeline`: 保存阶段列表并顺序执行。
+
+设计意图：
+
+1. 将“采集（抓原始事件）”与“清洗/富化/落库”解耦，Collector 只关心获取 RawEvent。
+2. 通过 Stage 链式组合，可按需要增删阶段，不侵入上游 Collector。
+3. 允许后续替换为异步/并行版本（Stage 接口未来可扩展为 `async process` 或者对大批量分块）。
+
+扩展指南：
+
+新增一个阶段（示例：简单情感打分）:
+
+```python
+from rayinfo_backend.pipelines.base import PipelineStage
+
+class SentimentStage(PipelineStage):
+		def process(self, events):
+				for e in events:
+						text = e.raw.get("text", "")
+						e.raw["sentiment"] = simple_sentiment(text)  # 伪函数
+				return events
+```
+
+然后在组装 Pipeline 时加入：
+
+```python
+pipeline = Pipeline([
+		DedupStage(),
+		SentimentStage(),
+		PersistStage(),
+])
+```
+
+规范 & 建议：
+
+- 顺序敏感：去重应尽量放前（减少后续处理量），富化阶段次之，最终持久化放最后。
+- 性能：若后续事件列表可能较大，Stage 内应避免 O(N^2) 操作；去重容器将演进为 BloomFilter / LRU Set 以降低内存。
+- 幂等性：Persist 前的所有字段补充建议幂等，避免重复写入造成副作用；Persist 内部需基于唯一键（例如 `source + post_id`）做 Upsert。
+- 失败处理：
+	- 单条解析失败 -> 记录日志并跳过，不应中断整批；
+	- 批处理失败（数据库暂时不可用）-> 整批重试（指数退避），必要时拆分批次；
+	- Stage 级不可恢复错误 -> 上报 metrics + 告警，并可短路后续阶段。
+- 观测（计划中）：为每个 Stage 记录 `input_count`, `output_count`, `duration_seconds`，形成链路指标。
+
+未来演进方向：
+
+1. Async 化：`process` 改为 `async`，允许 I/O（例如外部特征查询 / 向量服务）。
+2. 并行批处理：对独立记录映射型 Stage（Map 类）使用并发（线程池 / asyncio.gather）。
+3. 可配置装配：读取 `settings.PIPELINE_STAGES`（字符串列表）到工厂映射，实现声明式配置；支持按 Collector 类型定制。
+4. 状态化 Stage：引入可持久化状态（如去重的持久 BloomFilter），并提供 `load_state/save_state` 钩子统一管理。
+5. 错误路由：增加一个 Side Channel，把异常样本输出到“检视队列”供人工分析。
+
+快速对比（当前 vs 目标）：
+
+| 维度 | 当前 | 目标 |
+|------|------|------|
+| Stage 接口 | 同步, 简单列表 | 异步 + 流/批双模式 |
+| 去重 | 内存列表滑窗 | 可选 BloomFilter / Redis Set |
+| 配置 | 代码硬编码 | 配置 + 动态热更新 |
+| 观测 | 控制台打印 | metrics + tracing + 结构化日志 |
+| 错误处理 | 简单打印 | 分类、重试、旁路隔离 |
+
+这样，Pipeline 在体系中的角色就非常明确：它是 Collector 输出到存储/下游之前的“加工传送带”，负责质量（去重）、增强（富化）、可靠（重试与幂等）与观测闭环。
 
 ### 配置体系
 
