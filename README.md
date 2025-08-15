@@ -30,69 +30,40 @@ RayInfo 由前后端两部分组成：
 6. 任务爆炸可控：支持“参数化 Collector” -> 任务拆分 / 分片 / 节流 / 回压。
 7. 失败自愈：指数退避 + jitter、幂等写入、断点续跑（分页游标、时间窗口）。
 
-#### 目录结构建议
+### 采集架构设计
 
 ```
-rayinfo_backend/
-	src/rayinfo_backend/
-		app.py                # FastAPI 入口，包含启动事件 -> init scheduler
-		config/
-			settings.py         # Pydantic Settings (env + defaults)
-			collector_configs/  # 静态配置模板 (YAML/JSON)
-				weibo.yaml
-		collectors/
-			base.py             # BaseCollector 抽象 & 统一错误类型
-			registry.py         # CollectorRegistry 实现
-			common/
-				context.py        # CollectorContext, BrowserHandle 等
-				exceptions.py
-			weibo/
-				__init__.py
-				home.py           # 首页时间线（单实例）
-				user_feed/
-					__init__.py
-					collector.py    # 参数化采集器 (用户列表)
-					strategies.py   # 分片/并发/增量策略
-					parsers.py      # HTML/JSON -> 标准结构
-			x/
-				...               # 类似 weibo 结构
-			rss/
-				base_rss.py       # 通用 RSS 抽象
-				sources/
-					some_feed.py
-			custom/
-				example_site/
-					collector.py
-		scheduling/
-			scheduler.py        # APScheduler 封装 (SchedulerAdapter)
-			job_loader.py       # 从 DB/配置生成 TaskDefinition
-			task_builder.py     # 参数集合 -> TaskDefinition 列表
-			backoff.py          # 重试 & 指数退避策略
-		models/
-			task.py             # TaskDefinition, TaskInstance
-			content.py          # 规范化后的 Content 数据结构
-			raw_event.py        # 原始抓取数据
-			source.py           # SourceMeta
-		pipelines/
-			base.py
-			dedup.py
-			enrich.py
-			persist.py
-		storage/
-			repositories/
-				content_repo.py
-				task_repo.py
-		services/
-			rate_limit.py
-			browser/
-				browser_pool.py
-		utils/
-			time.py
-			hashing.py
-			logging.py
-		instrumentation/
-			metrics.py
-			tracing.py
+__init__.py           # 标记这个目录是一个 Python 包
+app.py                # 程序入口：启动 FastAPI 服务和调度器
+config/               # 放配置相关代码
+	settings.py         # 读取与管理配置（环境变量 + 默认值）
+collectors/           # 各类“采集器”代码目录
+	base.py             # 定义采集器的通用基类与基础错误
+	weibo/              # 微博相关采集器代码
+		__init__.py       # 标记微博采集器包
+		home.py           # 抓取微博首页时间线数据
+models/               # 放数据模型（结构定义）
+	task.py             # 定义任务相关的数据结构
+pipelines/            # 数据处理流水线（去重/加工等）的代码
+	__init__.py        # 标记流水线包
+	base.py            # 定义流水线的基础类与执行逻辑
+scheduling/          # 调度相关代码
+	scheduler.py        # 封装 APScheduler 的调度器
+utils/               # 通用小工具
+	logging.py         # 统一设置和使用日志输出
+		content_repo.py
+		task_repo.py
+services/
+	rate_limit.py
+	browser/
+		browser_pool.py
+utils/
+	time.py
+	hashing.py
+	logging.py
+instrumentation/
+	metrics.py
+	tracing.py
 ```
 
 ### 总体数据流（逻辑层次）
