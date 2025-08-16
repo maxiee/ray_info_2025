@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Callable
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
@@ -26,6 +24,7 @@ class SchedulerAdapter:
     async def run_collector_once(self, collector: BaseCollector):
         logger.info("[run] collector=%s", collector.name)
         events = []
+        # 返回异步生成器；可以“边等网络边产出”而不是一次性全返回，减小等待时间浪费。
         agen = collector.fetch()
         async for ev in agen:  # type: ignore
             events.append(ev)

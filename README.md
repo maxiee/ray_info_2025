@@ -34,6 +34,10 @@ RayInfo 由前后端两部分组成：
 
 ### APScheduler 调度器
 
+闹钟（APScheduler） -> 叫醒（job_wrapper） -> 捞（collector.fetch） -> 收集（events 列表） -> 传送带加工（Pipeline） -> 完成。
+
+记住这 7 个词：闹钟、叫醒、捞、收、带、存、等下一轮。
+
 集成策略：
 
 1. 启动流程：
@@ -50,6 +54,65 @@ RayInfo 由前后端两部分组成：
 约束限制：
 
 - 调度器仅在首次启动时完成初始化，运行期间不支持动态增删 / 频率调整；如需修改 Collector 频率或启停，需要更新配置并重启服务重新装载。
+
+#### SchedulerAdapter 详解
+
+可以把 `SchedulerAdapter` 想成“值班班长 + 传送带按钮控制员”。APScheduler 是工厂里强大的“自动闹钟系统”，而我们的 Adapter 负责：
+
+1. 把“要做的活”（各个 Collector）登记成定时闹钟（Job）。
+2. 到点时叫醒对应的 Collector 去“捞数据”。
+3. 把捞回来的原始数据丢到后面的 Pipeline 传送带上继续加工（去重 / 持久化）。
+
+源码位置：`scheduling/scheduler.py`
+
+##### 关键成员（用生活类比）
+
+| 成员 | 代码 | 类比 | 说明 |
+|------|------|------|------|
+| `self.scheduler` | `AsyncIOScheduler()` | 自动闹钟面板 | 负责定时触发任务（异步版，能直接跑协程） |
+| `self.pipeline` | `Pipeline([...])` | 传送带 | Collector 捞到的数据顺序加工 |
+| `run_collector_once` | 异步方法 | 一次“派出去捞” | 让 Collector 抓取一批，聚合成列表后交给 pipeline |
+| `add_collector_job` | 注册函数 | 给闹钟设时间 | 把“每隔 X 秒执行一次”写进调度器 |
+| `job_wrapper` | 内部 async 闭包 | 值班提醒 | APScheduler 实际调用的协程入口 |
+
+##### 一次执行完整旅程（时间线）
+
+1. 启动：`adapter.start()` -> APScheduler 启动自己的事件循环任务管理。
+2. 注册：`add_collector_job` 为每个 Collector 设一个“每 N 秒”的 IntervalTrigger。
+3. 到点：APScheduler 内部 tick 到达 -> 找出 due 的 job -> `await job_wrapper()`。
+4. 包装层：`job_wrapper` 调 `run_collector_once`。
+5. 抓取：`collector.fetch()` 返回一个异步生成器（像一条“逐条往外吐”的鱼篓）。
+6. 收集：`async for` 把生成器里产生的每个事件装进 `events` 列表。
+7. 加工：不为空则 `pipeline.run(events)`（依次执行 Dedup -> Persist）。
+8. 结束：本轮完成，等待下一个间隔。
+
+##### 为什么要“先收集成列表再交给 pipeline”？
+
+初期简单：Pipeline 当前是同步串行接口 `process(list)`。后续若要“边到边处理”可以：
+
+- 方案 A：把 Pipeline 改为支持 `async process_stream(async_iter)`。
+- 方案 B：批量分块（例如每 100 条 flush 一次）减小内存压力。
+
+##### 初版设计的刻意“留白”
+
+当前实现非常克制：
+
+- 不做复杂错误分级（直接日志）。
+- 不做重试策略（交由后续统一 backoff 组件）。
+- 不做动态增删（避免一开始就引入一致性 / 锁问题）。
+
+这样可以让核心路径（抓 -> 加工 -> 打印）最小化，先跑通价值闭环，再演进。
+
+##### FAQ
+
+1. 问：为什么使用 IntervalTrigger 而不是 Cron？
+   答：早期 Collector 多为“固定频率拉取”，Interval 更直接；后续如需“每天 8:00”再扩展 CronTrigger。
+3. 问：如果抓取时中途抛错会怎样？
+   答：当前会直接冒出到 APScheduler，日志记录；后续会添加 try/except 包装并统计失败次数。
+4. 问：Pipeline 没有 Enrich 阶段吗？
+   答：暂未实现，等出现实际富化需求再加，结构已留好插槽。
+5. 问：为什么 Pipeline 是同步的？
+   答：先保持简单；真正 I/O 富化出现时再异步化，避免过早复杂度。
 
 ### 总体数据流（逻辑层次）
 
