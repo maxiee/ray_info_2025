@@ -9,22 +9,7 @@ RayInfo 由前后端两部分组成：
 
 ## RayInfo 后端
 
-技术栈：
-
-- 语言： Python 3.11+
-- Web框架： FastAPI
-- 调度器： APScheduler (AsyncIOScheduler)
-- 浏览器自动化： Playwright
-- 数据库： SQLite
-- 运行环境： Mac Mini M4 (通过uvicorn长期运行)，通过 tailscale 组成内网 + 公网暴露
-
-## 应用入口
-
-路径：`rayinfo_backend/app.py`。首先初始化一个 FastAPI 实例，然后 APScheduler 以 lifespan 的方式与 FastAPI 生命周期集成，这样实现了 HTTP Server 与调度器的无缝协作。
-
-### 采集架构设计
-
-本章节聚焦后端“采集器（Collector）”体系与调度集成方案，目标是在未来支持大量异构来源（微博 / X / RSS / 定制站点），并具备：
+后端“采集器（Collector）”体系与调度集成方案，目标是在未来支持大量异构来源（微博 / X / RSS / 定制站点），并具备：
 
 1. 易扩展：新增一个来源 ≤ 30 分钟脚手架 + 少量业务代码。
 2. 高内聚低耦合：采集逻辑、调度策略、数据清洗、持久化分层。
@@ -34,41 +19,37 @@ RayInfo 由前后端两部分组成：
 6. 任务爆炸可控：支持“参数化 Collector” -> 任务拆分 / 分片 / 节流 / 回压。
 7. 失败自愈：指数退避 + jitter、幂等写入、断点续跑（分页游标、时间窗口）。
 
-### 目录结构
+技术栈：
 
-```
-__init__.py           # 标记这个目录是一个 Python 包
-app.py                # 程序入口：启动 FastAPI 服务和调度器
-config/               # 放配置相关代码
-	settings.py         # 读取与管理配置（环境变量 + 默认值）
-collectors/           # 各类“采集器”代码目录
-	base.py             # 定义采集器的通用基类与基础错误
-	weibo/              # 微博相关采集器代码
-		__init__.py       # 标记微博采集器包
-		home.py           # 抓取微博首页时间线数据
-models/               # 放数据模型（结构定义）
-	task.py             # 定义任务相关的数据结构
-pipelines/            # 数据处理流水线（去重/加工等）的代码
-	__init__.py        # 标记流水线包
-	base.py            # 定义流水线的基础类与执行逻辑
-scheduling/          # 调度相关代码
-	scheduler.py        # 封装 APScheduler 的调度器
-utils/               # 通用小工具
-	logging.py         # 统一设置和使用日志输出
-		content_repo.py
-		task_repo.py
-services/
-	rate_limit.py
-	browser/
-		browser_pool.py
-utils/
-	time.py
-	hashing.py
-	logging.py
-instrumentation/
-	metrics.py
-	tracing.py
-```
+- 语言： Python 3.11+
+- Web框架： FastAPI
+- 调度器： APScheduler (AsyncIOScheduler)
+- 浏览器自动化： Playwright
+- 数据库： SQLite
+- 运行环境： Mac Mini M4 (通过uvicorn长期运行)，通过 tailscale 组成内网 + 公网暴露
+
+### 应用入口
+
+路径：`rayinfo_backend/app.py`。首先初始化一个 FastAPI 实例，然后 APScheduler 以 lifespan 的方式与 FastAPI 生命周期集成，这样实现了 HTTP Server 与调度器的无缝协作。
+
+### APScheduler 调度器
+
+集成策略：
+
+1. 启动流程：
+	 - 加载配置 -> 初始化 CollectorRegistry -> 初始化 Pipeline -> 初始化 SchedulerAdapter。
+	 - 调用 job_loader.sync()：从 task_repo / 配置生成 TaskDefinition 集合。
+	 - 为每个 TaskDefinition 调用 adapter.add_or_update_job()。
+2. Job ID 规范：
+	 - 静态 Collector: `{collector_name}` （如 weibo.home）
+	 - 聚合/参数化调度 Job: `{collector_name}:aggregator`
+3. 失败策略：
+	 - APScheduler job 级失败：记录失败计数，超阈值 -> 降级（暂停 / 降频）
+	 - 采集内部异常：按照粒度：网络/速率限制 -> backoff；解析错误 -> 计数并告警；身份失效 -> 触发 re-login 流程。
+
+约束限制：
+
+- 调度器仅在首次启动时完成初始化，运行期间不支持动态增删 / 频率调整；如需修改 Collector 频率或启停，需要更新配置并重启服务重新装载。
 
 ### 总体数据流（逻辑层次）
 
@@ -101,25 +82,6 @@ Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> �
 	 - 基于 token bucket + per-domain 限制
 8. BrowserPool (Playwright)
 	 - 复用浏览器上下文；Collector 通过上下文工厂获取 page
-
-### APScheduler 调度器
-
-集成策略：
-
-1. 启动流程：
-	 - 加载配置 -> 初始化 CollectorRegistry -> 初始化 Pipeline -> 初始化 SchedulerAdapter。
-	 - 调用 job_loader.sync()：从 task_repo / 配置生成 TaskDefinition 集合。
-	 - 为每个 TaskDefinition 调用 adapter.add_or_update_job()。
-2. Job ID 规范：
-	 - 静态 Collector: `{collector_name}` （如 weibo.home）
-	 - 聚合/参数化调度 Job: `{collector_name}:aggregator`
-3. 失败策略：
-	 - APScheduler job 级失败：记录失败计数，超阈值 -> 降级（暂停 / 降频）
-	 - 采集内部异常：按照粒度：网络/速率限制 -> backoff；解析错误 -> 计数并告警；身份失效 -> 触发 re-login 流程。
-
-约束限制：
-
-- 调度器仅在首次启动时完成初始化，运行期间不支持动态增删 / 频率调整；如需修改 Collector 频率或启停，需要更新配置并重启服务重新装载。
 
 ### 任务参数化与分片（微博 user_feed 示例）
 
@@ -333,11 +295,41 @@ class WeiboUserFeedCollector(BaseCollector):
 				...
 ```
 
-### 结论
+### 目录结构
 
-通过“参数化聚合 Job + Collector 抽象 + Pipeline + 配置驱动”的结构，既避免 APScheduler 任务数爆炸，又保证新增来源的低摩擦和运行时可观测性，为后续分布式扩展和 UI 管理奠定基础。
-
-> 后续在 v0.2 将补充：完整 Pydantic 模型、任务状态表结构、metrics 清单、示例实现代码。
+```
+__init__.py           # 标记这个目录是一个 Python 包
+app.py                # 程序入口：启动 FastAPI 服务和调度器
+config/               # 放配置相关代码
+	settings.py         # 读取与管理配置（环境变量 + 默认值）
+collectors/           # 各类“采集器”代码目录
+	base.py             # 定义采集器的通用基类与基础错误
+	weibo/              # 微博相关采集器代码
+		__init__.py       # 标记微博采集器包
+		home.py           # 抓取微博首页时间线数据
+models/               # 放数据模型（结构定义）
+	task.py             # 定义任务相关的数据结构
+pipelines/            # 数据处理流水线（去重/加工等）的代码
+	__init__.py        # 标记流水线包
+	base.py            # 定义流水线的基础类与执行逻辑
+scheduling/          # 调度相关代码
+	scheduler.py        # 封装 APScheduler 的调度器
+utils/               # 通用小工具
+	logging.py         # 统一设置和使用日志输出
+		content_repo.py
+		task_repo.py
+services/
+	rate_limit.py
+	browser/
+		browser_pool.py
+utils/
+	time.py
+	hashing.py
+	logging.py
+instrumentation/
+	metrics.py
+	tracing.py
+```
 
 
 
