@@ -36,6 +36,16 @@ Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> �
 
 路径：`rayinfo_backend/app.py`。首先初始化一个 FastAPI 实例，然后 APScheduler 以 lifespan 的方式与 FastAPI 生命周期集成，这样实现了 HTTP Server 与调度器的无缝协作。
 
+### 核心抽象
+
+- BaseCollector：负责去不同网站把原始信息抓起来，像一个自动抓取信息的机器。
+- TaskDefinition：描述要做哪项抓取工作、带什么参数和什么时候执行，就像一张任务单。
+- TaskInstance（运行态）：任务被实际运行时的那次记录，有唯一 ID 和重试信息，像一次任务的执行事件单。
+- PipelineStage：传送带上的一个工位，负责把事件去重、补充信息或写入数据库，像工厂里的单个工序。
+- CollectorRegistry：保存并管理所有采集器的信息，像一个采集器的电话簿或目录。
+- SchedulerAdapter（封装 APScheduler）：把任务交给闹钟系统并在到点时唤醒它们，像值班的提醒员。
+- BrowserPool (Playwright)：共享和复用浏览器实例，避免每次都打开新浏览器，像公共的浏览器工具箱。
+
 ### APScheduler 调度器
 
 闹钟（APScheduler） -> 叫醒（job_wrapper） -> 捞（collector.fetch） -> 收集（events 列表） -> 传送带加工（Pipeline） -> 完成。
@@ -128,41 +138,13 @@ DedupStage.process:
 5. 问：为什么 Pipeline 是同步的？
    答：先保持简单；真正 I/O 富化出现时再异步化，避免过早复杂度。
 
-
-
-#### 核心抽象
-
-1. BaseCollector
-	 - name: 唯一名称（如 weibo.home, weibo.user_feed）
-	 - mode: one-shot / streaming / parameterized
-	 - supports_parameters: bool
-	 - fetch(context: CollectorContext, param: TaskParam | None) -> Iterable[RawEvent]
-	 - state 序列化（分页游标、上次时间戳）可选：load_state() / save_state()
-2. TaskDefinition
-	 - collector_name, param_hash, schedule (cron/interval)、enabled、priority、retry_policy
-3. TaskInstance（运行态）
-	 - id（= f"{collector_name}:{param_hash}:{epoch_ts}"）
-	 - tracing_id, attempts, next_backoff
-4. PipelineStage
-	 - process(records: list[Record]) -> list[Record]
-	 - 类型：DeduplicateStage, EnrichStage, PersistStage 等
-5. CollectorRegistry
-	 - 注册 / 发现 Collector
-	 - 提供 metadata: version, default_schedule, parameter_schema
-6. SchedulerAdapter（封装 APScheduler）
-	 - add_or_update_job(TaskDefinition)
-	 - remove_job(id)
-	 - event hooks: on_job_error, on_job_missed, on_job_executed
-7. RateLimiter / ConcurrencyController
-	 - 基于 token bucket + per-domain 限制
-8. BrowserPool (Playwright)
-	 - 复用浏览器上下文；Collector 通过上下文工厂获取 page
-
 ### RawEvent
 
 `RawEvent` 是系统里一条“刚捞上来、还没加工”的原始信息数据。可以把它理解为：
 
 > 捕到的一条“信息小鱼”——还带着海水（原始字段），还没挑刺（去重）、没切片（富化）、没装盒（持久化）。
+
+一句话说明：RawEvent 就是刚抓到的原始记录，像一条未加工的信息素材。
 
 “源（source）+ 内容包（raw）+ 时间戳（fetched_at） = 原始事件快照”。
 
@@ -352,13 +334,6 @@ collectors:
 			max_batch_size: 30
 ```
 
-### 可观测性
-
-- metrics: scrape_duration_seconds, records_fetched_total, records_persisted_total, task_failures_total, rate_limit_wait_seconds
-- tracing: span 层级 = job -> batch -> user_fetch -> pipeline
-- 日志结构化：JSON (level, ts, collector, task_id, event)
-- 告警阈值：连续错误次数 / 拉取延迟 > SLA。
-
 ### 新增 Collector 步骤示例（X 平台）
 
 1. 在 collectors/x/ 新建模块，继承 BaseCollector。
@@ -389,28 +364,6 @@ collectors:
 阶段 3：RSS 通用化、X 平台接入；支持多进程或分布式（换用持久化 APScheduler / 改成 Celery/Arq）。
 
 阶段 4：任务优先级队列、Web UI 管理（启停 / 频率调节 / 观测仪表板）。
-
-### 简要类草图（伪代码）
-
-```python
-class BaseCollector(ABC):
-		name: str
-		supports_parameters: bool = False
-		default_schedule: str | None = None  # cron 或 None
-
-		async def setup(self, ctx: CollectorContext): ...  # 可选初始化
-		@abstractmethod
-		async def fetch(self, ctx: CollectorContext, param: Any | None) -> AsyncIterator[RawEvent]: ...
-		async def save_state(self, ctx, state): ...
-		async def load_state(self, ctx) -> Any: ...
-
-class WeiboUserFeedCollector(BaseCollector):
-		name = "weibo.user_feed"
-		supports_parameters = True
-		async def fetch(self, ctx, param: UserFeedParam):
-				# 获取页面 / API -> yield RawEvent
-				...
-```
 
 ### 目录结构
 
