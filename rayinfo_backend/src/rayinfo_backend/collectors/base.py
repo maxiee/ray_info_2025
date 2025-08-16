@@ -8,8 +8,14 @@ import time
 
 @dataclass(slots=True)
 class RawEvent:
+
+    # 标记出处，便于后续区分与幂等键组成。源自哪个平台/采集器，如 "weibo.home"
     source: str
+
+    # 保存平台原始/半结构化数据，不做“过早清洗”
     raw: dict
+
+    # 抓取发生的时间（Unix 秒）
     fetched_at: float = field(default_factory=time.time)
 
 

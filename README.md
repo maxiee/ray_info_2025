@@ -146,6 +146,39 @@ Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> �
 8. BrowserPool (Playwright)
 	 - 复用浏览器上下文；Collector 通过上下文工厂获取 page
 
+#### RawEvent 详解
+
+`RawEvent` 是系统里一条“刚捞上来、还没加工”的原始信息数据。可以把它理解为：
+
+> 捕到的一条“信息小鱼”——还带着海水（原始字段），还没挑刺（去重）、没切片（富化）、没装盒（持久化）。
+
+“源（source）+ 内容包（raw）+ 时间戳（fetched_at） = 原始事件快照”。
+
+看到 RawEvent，就想到：这只是“素材”，真正的“产品”要等 Pipeline 加工后才出现。
+
+源码：`collectors/base.py`
+
+RawEvent 的作用：
+
+1. 解耦：Collector 只负责“抓”，不负责“怎么存 / 怎么去重”。
+2. 可扩展：不同平台字段千奇百怪，统一包一层，后续 Pipeline 可以逐步规范化。
+3. 便于幂等：`(source, raw["id"])` / 内容指纹 可作为去重键。
+4. 观测：统一结构可以统计“每次抓到多少条”“延迟多大”。
+
+生命周期（从出生到落库）：
+
+1. 由 Collector 的 `fetch()` `yield RawEvent(...)` 诞生。
+2. SchedulerAdapter 聚合成列表 `events`。
+3. Pipeline 依次处理：DedupStage -> (未来：EnrichStage) -> PersistStage。
+4. 被写入数据库 / 发送到下游后，它的“原始形态”可能被保留（全文）或只存关键字段。
+
+##### 未来可能演进
+
+1. 增加 `uid`（内部统一 ID），方便跨阶段引用。
+2. 增加 `normalized` 字段或派生类，存标准化结果。
+3. 增加校验层（Pydantic Model）在“进入 Pipeline 前”做格式检查。 
+4. 引入压缩策略：raw 大字段（HTML / 长文本）按需裁剪或单独存储。
+
 ### 任务参数化与分片（微博 user_feed 示例）
 
 需求：给定一个可配置用户列表（可能上千），按各自采集周期更新。
