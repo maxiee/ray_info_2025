@@ -1,12 +1,5 @@
 # RayInfo Backend Core Skeleton
 
-最小可运行骨架，仅包含：
-
-- FastAPI 应用 (`app.py`)
-- APScheduler `AsyncIOScheduler` 生命周期集成
-- 一个示例定时任务（每 30 秒输出一次 heartbeat 日志）
-- 根路由 `/` 返回 `{"message": "Hello RayInfo"}`
-
 ## 运行
 
 使用 uvicorn（开发模式）：

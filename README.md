@@ -18,6 +18,10 @@ RayInfo 由前后端两部分组成：
 - 数据库： SQLite
 - 运行环境： Mac Mini M4 (通过uvicorn长期运行)，通过 tailscale 组成内网 + 公网暴露
 
+## 应用入口
+
+路径：`rayinfo_backend/app.py`。首先初始化一个 FastAPI 实例，然后 APScheduler 以 lifespan 的方式与 FastAPI 生命周期集成，这样实现了 HTTP Server 与调度器的无缝协作。
+
 ### 采集架构设计
 
 本章节聚焦后端“采集器（Collector）”体系与调度集成方案，目标是在未来支持大量异构来源（微博 / X / RSS / 定制站点），并具备：

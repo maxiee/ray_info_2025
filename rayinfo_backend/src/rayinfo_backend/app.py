@@ -49,10 +49,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
             logger.info("Scheduler stopped.")
 
 
-async def _shutdown_scheduler():  # 兼容旧接口，暂不使用
-    await asyncio.sleep(0.05)
-
-
 app = FastAPI(title="RayInfo Backend", lifespan=lifespan)
 
 
