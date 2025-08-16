@@ -28,6 +28,10 @@ RayInfo 由前后端两部分组成：
 - 数据库： SQLite
 - 运行环境： Mac Mini M4 (通过uvicorn长期运行)，通过 tailscale 组成内网 + 公网暴露
 
+总体数据流：
+
+Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> 富化(补充元数据) -> 持久化) -> 出口(数据库 / 队列 / Webhook)
+
 ### 应用入口
 
 路径：`rayinfo_backend/app.py`。首先初始化一个 FastAPI 实例，然后 APScheduler 以 lifespan 的方式与 FastAPI 生命周期集成，这样实现了 HTTP Server 与调度器的无缝协作。
@@ -124,9 +128,7 @@ DedupStage.process:
 5. 问：为什么 Pipeline 是同步的？
    答：先保持简单；真正 I/O 富化出现时再异步化，避免过早复杂度。
 
-### 总体数据流（逻辑层次）
 
-Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> 富化(补充元数据) -> 持久化) -> 出口(数据库 / 队列 / Webhook)
 
 #### 核心抽象
 
