@@ -86,12 +86,49 @@ RayInfo 由前后端两部分组成：
 7. 加工：不为空则 `pipeline.run(events)`（依次执行 Dedup -> Persist）。
 8. 结束：本轮完成，等待下一个间隔。
 
+##### 一次执行完整旅程（时间线）
+
+collector.fetch() 产出的一组 RawEvent 是什么？
+
+- fetch 是一个“异步生成器”→ 它会一条一条 yield RawEvent。
+- 每 yield 一次，就表示“发现了一条新的原始内容”。
+- 最终我们用 async for 把这些 yield 到的东西收集成一个 Python 列表 events（可能 0 条、1 条、N 条）。
+
+一条微博 = 一个 RawEvent 吗？
+
+- 是。我们把“最小有意义的内容单元”定义为一个 RawEvent。
+- 抓微博首页：一个页面通常包含多条微博 → fetch 会循环那一页解析出来的每条微博并逐条 yield → 这页可能就 yield 出 20 个 RawEvent。
+- 如果是只抓一个“单条详情页”，确实可能只 yield 1 个 RawEvent（列表长度=1）；但依旧保持“统一处理：列表传入 pipeline”。
+
 ##### 为什么要“先收集成列表再交给 pipeline”？
 
-初期简单：Pipeline 当前是同步串行接口 `process(list)`。后续若要“边到边处理”可以：
+- 方便做“批处理”优化（去重、批量入库、一次事务）。
+- Pipeline 现在是同步串行接口 process(list)，最简单、易调试。
+- 后面如果需要“边产出边处理”，可以改成流式（async）或分块 flush。
 
-- 方案 A：把 Pipeline 改为支持 `async process_stream(async_iter)`。
-- 方案 B：批量分块（例如每 100 条 flush 一次）减小内存压力。
+##### pipeline 如何处理 RawEvent 列表
+
+伪代码：
+
+```python
+events = list(async_fetch_generator)  # e.g. 20 条
+for stage in pipeline.stages:
+    events = stage.process(events)    # 每个阶段接收并返回（可能过滤）
+# 结束后 events 是最终要持久化/输出的结果
+```
+
+Pipeline 如何“一个一个加工”？ 
+
+RayEvent 列表统一传入一个 Stage，Stage 完成后返回新的列表，再传入下一个 Stage。
+
+DedupStage.process:
+
+- 建一个 seen 指纹集合（对象属性里缓存）。
+- 遍历传入的 events 列表：
+    - 对每个 e 计算 fingerprint（例如 f = hash(e.source + e.raw.get('id',''))）
+    - 若 f 在 seen：丢弃（不放入输出列表）
+    - 否则加入 seen，并收集到新的 output 列表
+- 返回去重后的列表（可能比原来短）
 
 ##### 初版设计的刻意“留白”
 
@@ -146,7 +183,7 @@ Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> �
 8. BrowserPool (Playwright)
 	 - 复用浏览器上下文；Collector 通过上下文工厂获取 page
 
-#### RawEvent 详解
+### RawEvent
 
 `RawEvent` 是系统里一条“刚捞上来、还没加工”的原始信息数据。可以把它理解为：
 
@@ -171,6 +208,15 @@ RawEvent 的作用：
 2. SchedulerAdapter 聚合成列表 `events`。
 3. Pipeline 依次处理：DedupStage -> (未来：EnrichStage) -> PersistStage。
 4. 被写入数据库 / 发送到下游后，它的“原始形态”可能被保留（全文）或只存关键字段。
+
+#### RawEvent 对应内容粒度
+
+看页面承载的粒度：
+
+- 页面里含多条内容（如 timeline、列表页）：多条 RawEvent。
+- 页面本身就是唯一对象（如某个用户档案、一个统计数）：1 条 RawEvent。
+
+即：页面 ≠ RawEvent；页面只是“容器”，RawEvent 是“最小内容颗粒”。
 
 ##### 未来可能演进
 
