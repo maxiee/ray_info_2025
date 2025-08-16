@@ -48,23 +48,15 @@ RayInfo 由前后端两部分组成：
 
 #### SchedulerAdapter
 
-可以把 `SchedulerAdapter` 想成“值班班长 + 传送带按钮控制员”。APScheduler 是工厂里强大的“自动闹钟系统”，而我们的 Adapter 负责：
+APScheduler 是工厂里强大的“自动闹钟系统”。可以把 `SchedulerAdapter` 想成“值班班长 + 传送带按钮控制员”。
+
+`SchedulerAdapter` 负责：
 
 1. 把“要做的活”（各个 Collector）登记成定时闹钟（Job）。
 2. 到点时叫醒对应的 Collector 去“捞数据”。
 3. 把捞回来的原始数据丢到后面的 Pipeline 传送带上继续加工（去重 / 持久化）。
 
 源码位置：`scheduling/scheduler.py`
-
-##### 关键成员（用生活类比）
-
-| 成员 | 代码 | 类比 | 说明 |
-|------|------|------|------|
-| `self.scheduler` | `AsyncIOScheduler()` | 自动闹钟面板 | 负责定时触发任务（异步版，能直接跑协程） |
-| `self.pipeline` | `Pipeline([...])` | 传送带 | Collector 捞到的数据顺序加工 |
-| `run_collector_once` | 异步方法 | 一次“派出去捞” | 让 Collector 抓取一批，聚合成列表后交给 pipeline |
-| `add_collector_job` | 注册函数 | 给闹钟设时间 | 把“每隔 X 秒执行一次”写进调度器 |
-| `job_wrapper` | 内部 async 闭包 | 值班提醒 | APScheduler 实际调用的协程入口 |
 
 ##### 一次执行完整旅程（时间线）
 
@@ -77,9 +69,9 @@ RayInfo 由前后端两部分组成：
 7. 加工：不为空则 `pipeline.run(events)`（依次执行 Dedup -> Persist）。
 8. 结束：本轮完成，等待下一个间隔。
 
-##### 一次执行完整旅程（时间线）
+##### collector.fetch() 
 
-collector.fetch() 产出的一组 RawEvent 是什么？
+产出的一组 RawEvent 是什么？
 
 - fetch 是一个“异步生成器”→ 它会一条一条 yield RawEvent。
 - 每 yield 一次，就表示“发现了一条新的原始内容”。
@@ -120,16 +112,6 @@ DedupStage.process:
     - 若 f 在 seen：丢弃（不放入输出列表）
     - 否则加入 seen，并收集到新的 output 列表
 - 返回去重后的列表（可能比原来短）
-
-##### 初版设计的刻意“留白”
-
-当前实现非常克制：
-
-- 不做复杂错误分级（直接日志）。
-- 不做重试策略（交由后续统一 backoff 组件）。
-- 不做动态增删（避免一开始就引入一致性 / 锁问题）。
-
-这样可以让核心路径（抓 -> 加工 -> 打印）最小化，先跑通价值闭环，再演进。
 
 ##### FAQ
 
