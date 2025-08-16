@@ -1,5 +1,7 @@
 # RayInfo Backend Core Skeleton
 
+所有的文档请生成到根目录的 README 下，不要写在这里了。
+
 ## 运行
 
 使用 uvicorn（开发模式）：

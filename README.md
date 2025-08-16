@@ -38,24 +38,15 @@ RayInfo 由前后端两部分组成：
 
 记住这 7 个词：闹钟、叫醒、捞、收、带、存、等下一轮。
 
-集成策略：
+#### 集成策略
 
-1. 启动流程：
-	 - 加载配置 -> 初始化 CollectorRegistry -> 初始化 Pipeline -> 初始化 SchedulerAdapter。
-	 - 调用 job_loader.sync()：从 task_repo / 配置生成 TaskDefinition 集合。
-	 - 为每个 TaskDefinition 调用 adapter.add_or_update_job()。
-2. Job ID 规范：
-	 - 静态 Collector: `{collector_name}` （如 weibo.home）
-	 - 聚合/参数化调度 Job: `{collector_name}:aggregator`
-3. 失败策略：
-	 - APScheduler job 级失败：记录失败计数，超阈值 -> 降级（暂停 / 降频）
-	 - 采集内部异常：按照粒度：网络/速率限制 -> backoff；解析错误 -> 计数并告警；身份失效 -> 触发 re-login 流程。
+在 app.py 的 FastAPI lifespan 中，首先创建 `SchedulerAdapter` 实例，然后调用 `adapter.start()` 启动 APScheduler。这样可以确保调度器在 FastAPI 启动时就开始运行。
 
-约束限制：
+在创建 `SchedulerAdapter` 时，调用 `load_all_collectors()` 来加载所有已注册的 Collector。
 
-- 调度器仅在首次启动时完成初始化，运行期间不支持动态增删 / 频率调整；如需修改 Collector 频率或启停，需要更新配置并重启服务重新装载。
+`finally` 表示 FastAPI 关闭时，调用 `adapter.shutdown()` 来优雅地停止 APScheduler。
 
-#### SchedulerAdapter 详解
+#### SchedulerAdapter
 
 可以把 `SchedulerAdapter` 想成“值班班长 + 传送带按钮控制员”。APScheduler 是工厂里强大的“自动闹钟系统”，而我们的 Adapter 负责：
 
