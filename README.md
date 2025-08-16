@@ -353,6 +353,16 @@ collectors:
 | ParseError | DOM/JSON 结构变化 | 记录 + 告警，样本入 inspection 队列 |
 | Permanent | 资源不存在 | 标记任务失败，不重试 |
 
+### BrowserPool (Playwright)：
+
+共享和复用浏览器实例，避免每次都打开新浏览器，像公共的浏览器工具箱。
+
+RayInfo 启动后，自动启动 Playwright 浏览器示例，我希望实示例不以无头方式运行，以便于我观察调试。启动后，各个 Collector 可以通过 `BrowserPool` 获取浏览器上下文（Context）和页面（Page），从而执行抓取任务。
+
+#### 浏览器池初始化
+
+创建浏览器实例，并提供可供 Collector 访问的接口能力。接口能力需要具备扩展性，最初的能力包括创建页面、加载 URL，执行脚本等，未来如果想要扩充能力，能够很容易地扩展，同时代码又不至于很乱，始终保持可读性。
+
 ### 演进路线
 
 阶段 0：当前基础 + 引入目录骨架 + BaseCollector + Registry。
