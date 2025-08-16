@@ -1,11 +1,8 @@
+"""Weibo 平台 collectors 包.
+
+当前注册由顶层 collectors.discover_and_register 自动完成，这里不再做副作用导入。
+"""
+
 from __future__ import annotations
 
-from ..base import registry, BaseCollector
-
-
-def register_weibo(c: BaseCollector):  # 简单封装, 未来可添加平台级初始化
-    registry.register(c)
-
-
-# 导入具体 collector 以触发注册 (在 app 启动时 import)
-from . import home  # noqa: E402,F401
+__all__ = []

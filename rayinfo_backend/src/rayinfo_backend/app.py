@@ -11,8 +11,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -20,6 +18,7 @@ from fastapi import FastAPI
 
 from .utils.logging import setup_logging
 from .scheduling.scheduler import SchedulerAdapter
+from .collectors import discover_and_register  # 新增: 自动发现 collectors
 
 logger = setup_logging()
 
@@ -32,8 +31,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
     global adapter
     logger.info("Application starting ...")
 
-    # 触发 collectors 注册
-    from .collectors import weibo  # noqa: F401
+    # 自动发现并注册所有 collectors
+    discover_and_register()
 
     adapter = SchedulerAdapter()
     adapter.load_all_collectors()

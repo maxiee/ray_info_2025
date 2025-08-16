@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import random
 from typing import AsyncIterator
-from . import register_weibo
 from ..base import BaseCollector, RawEvent
 
 
@@ -22,7 +21,3 @@ class WeiboHomeCollector(BaseCollector):
                     "text": f"模拟微博首页内容 {i}",
                 },
             )
-
-
-collector_instance = WeiboHomeCollector()
-register_weibo(collector_instance)
