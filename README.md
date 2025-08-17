@@ -377,7 +377,7 @@ RayInfo 启动后，自动启动 Playwright 浏览器示例，我希望实示例
 
 ### Collectors
 
-#### 搜索引擎采集器
+#### 搜索引擎采集器（MesCollector）
 
 MultiEngineSearch (mes) 是我开发一个轻量级、可扩展的命令行工具，提供了查询多个搜索引擎的统一接口。
 
@@ -406,4 +406,22 @@ mes search "本周技术新闻" --time w             # 搜索最近一周的结�
 
 需要注意，mes Collector 内部要为扩展性留有余地，比如我会首先利用好每天100次的免费 Google API 调用额度，在额度用完之后，降级为 DuckDuckGo 或其他搜索引擎。
 
+mse 的 JSON 输出格式如下：
 
+```json
+$ mes search "机器学习" --output json --limit 2
+[
+  {
+    "title": "机器学习 - 维基百科，自由的百科全书",
+    "url": "https://zh.wikipedia.org/wiki/机器学习",
+    "description": "机器学习（英語： machine learning ）是人工智能的一个分支...",
+    "engine": "duckduckgo"
+  },
+  {
+    "title": "机器学习简介 - 菜鸟教程",
+    "url": "https://www.runoob.com/ml/ml-intro.html",
+    "description": "机器学习（Machine Learning）是人工智能（AI）的一个分支...",
+    "engine": "duckduckgo"
+  }
+]
+```
