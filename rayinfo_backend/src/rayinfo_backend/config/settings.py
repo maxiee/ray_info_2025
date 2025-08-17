@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 from pathlib import Path
 import yaml
 from typing import List, Optional
@@ -9,46 +9,17 @@ import logging
 logger = logging.getLogger("rayinfo.config")
 
 
-class MesPerQueryOverride(BaseModel):
+class SearchEngineItem(BaseModel):
     query: str
-    interval_seconds: Optional[int] = Field(default=None, ge=1)
-    engine: Optional[str] = None
-
-
-class MesSearchConfig(BaseModel):
-    interval_seconds: int = Field(default=300, ge=1, description="默认所有查询间隔秒数")
+    interval_seconds: int = Field(ge=1)
     engine: str = Field(default="duckduckgo")
-    queries: List[str] = Field(default_factory=list)
-    per_query: List[MesPerQueryOverride] = Field(
-        default_factory=list, description="对单个 query 的覆盖配置"
-    )
-
-    def iter_query_jobs(self):
-        """Yield (query, interval_seconds, engine)."""
-        override_map: dict[str, MesPerQueryOverride] = {
-            o.query: o for o in self.per_query
-        }
-        for q in self.queries:
-            ov = override_map.get(q)
-            yield (
-                q,
-                (
-                    ov.interval_seconds
-                    if ov and ov.interval_seconds
-                    else self.interval_seconds
-                ),
-                (ov.engine if ov and ov.engine else self.engine),
-            )
-
-
-class SearchConfig(BaseModel):
-    mes: MesSearchConfig = Field(default_factory=MesSearchConfig)
 
 
 class Settings(BaseModel):
     scheduler_timezone: str = Field(default="UTC")
     weibo_home_interval_seconds: int = Field(default=60)
-    search: SearchConfig = Field(default_factory=SearchConfig)
+    # 新结构：search_engine 是一个任务列表
+    search_engine: List[SearchEngineItem] = Field(default_factory=list)
 
     @staticmethod
     def from_yaml(path: Path | str) -> "Settings":
@@ -59,12 +30,20 @@ class Settings(BaseModel):
         data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         # 兼容：顶层 scheduler.timezone
         scheduler_tz = data.get("scheduler", {}).get("timezone")
-        search_cfg = data.get("search", {})
+        # 新结构优先: 顶层 search_engine
+        search_engine_list_raw = data.get("search_engine")
+        items: List[SearchEngineItem] = []
+        if isinstance(search_engine_list_raw, list):
+            for obj in search_engine_list_raw:
+                try:
+                    items.append(SearchEngineItem(**obj))
+                except Exception as e:  # pragma: no cover - 容错日志
+                    logger.warning(
+                        "invalid search_engine item skipped=%s error=%s", obj, e
+                    )
         settings = Settings(
             scheduler_timezone=scheduler_tz or "UTC",
-            search=SearchConfig(
-                mes=MesSearchConfig(**(search_cfg.get("mes", {}) or {}))
-            ),
+            search_engine=items,
         )
         return settings
 

@@ -18,15 +18,15 @@
 scheduler:
   timezone: "UTC"
 
-search:
-  mes:
-    interval_seconds: 300
+# 新配置：search_engine 为一个数组，每个元素代表一个独立的搜索任务
+# 字段：
+#   query (str, 必填)            查询关键词
+#   interval_seconds (int, 必填) 执行间隔秒
+#   engine (str, 可选)           搜索引擎（默认 duckduckgo）
+search_engine:
+  - query: "机器学习"
+    interval_seconds: 180
     engine: duckduckgo
-    queries:
-      - "机器学习"
-      - "人工智能 新闻"
-    per_query:
-      - query: "机器学习"
-        interval_seconds: 180
-      - query: "人工智能 新闻"
-        interval_seconds: 600
+  - query: "人工智能 新闻"
+    interval_seconds: 600
+    engine: duckduckgo

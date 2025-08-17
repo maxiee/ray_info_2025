@@ -38,9 +38,14 @@ class MesCollector(BaseCollector):
         if self._loaded:
             return
         settings = get_settings()
-        mes_cfg = settings.search.mes
-        self.default_interval_seconds = mes_cfg.interval_seconds
-        self._query_jobs = list(mes_cfg.iter_query_jobs())
+        # 新结构：settings.search_engine 是列表 (query, interval_seconds, engine)
+        if settings.search_engine:
+            self._query_jobs = [
+                (item.query, item.interval_seconds, item.engine)
+                for item in settings.search_engine
+            ]
+        else:
+            self._query_jobs = []
         self._loaded = True
 
     def list_param_jobs(self) -> list[tuple[str, int]]:
