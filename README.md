@@ -375,42 +375,35 @@ RayInfo 启动后，自动启动 Playwright 浏览器示例，我希望实示例
 
 阶段 4：任务优先级队列、Web UI 管理（启停 / 频率调节 / 观测仪表板）。
 
-### 目录结构
+### Collectors
 
-```
-__init__.py           # 标记这个目录是一个 Python 包
-app.py                # 程序入口：启动 FastAPI 服务和调度器
-config/               # 放配置相关代码
-	settings.py         # 读取与管理配置（环境变量 + 默认值）
-collectors/           # 各类“采集器”代码目录
-	base.py             # 定义采集器的通用基类与基础错误
-	weibo/              # 微博相关采集器代码
-		__init__.py       # 标记微博采集器包
-		home.py           # 抓取微博首页时间线数据
-models/               # 放数据模型（结构定义）
-	task.py             # 定义任务相关的数据结构
-pipelines/            # 数据处理流水线（去重/加工等）的代码
-	__init__.py        # 标记流水线包
-	base.py            # 定义流水线的基础类与执行逻辑
-scheduling/          # 调度相关代码
-	scheduler.py        # 封装 APScheduler 的调度器
-utils/               # 通用小工具
-	logging.py         # 统一设置和使用日志输出
-		content_repo.py
-		task_repo.py
-services/
-	rate_limit.py
-	browser/
-		browser_pool.py
-utils/
-	time.py
-	hashing.py
-	logging.py
-instrumentation/
-	metrics.py
-	tracing.py
+#### 搜索引擎采集器
+
+MultiEngineSearch (mes) 是我开发一个轻量级、可扩展的命令行工具，提供了查询多个搜索引擎的统一接口。
+
+mes 命令我已经全局安装，它的使用方式如下：
+
+```bash
+# 基本搜索 (默认使用 DuckDuckGo)
+mes search "python编程教程"
+
+# 使用指定搜索引擎
+mes search "机器学习基础" --engine duckduckgo
+mes search "深度学习教程" --engine google      # 需要配置API密钥
+
+# 输出为JSON格式
+mes search "网页开发" --output json --limit 5
+
+# 显示详细信息
+mes search "深度学习" --verbose --limit 5
+
+# 时间筛选搜索
+mes search "最新AI新闻" --time d --limit 10   # 搜索最近一天的结果
+mes search "本周技术新闻" --time w             # 搜索最近一周的结果
 ```
 
+我需要封装一个 mes Collector，能够定时执行 mes 命令，抓取搜索结果，并将其转换为 RawEvent 结构。
 
+需要注意，mes Collector 内部要为扩展性留有余地，比如我会首先利用好每天100次的免费 Google API 调用额度，在额度用完之后，降级为 DuckDuckGo 或其他搜索引擎。
 
 
