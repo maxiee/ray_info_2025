@@ -6,6 +6,7 @@ import logging
 from typing import AsyncIterator, List, Dict, Any
 
 from ..base import BaseCollector, RawEvent
+from ...config.settings import get_settings
 
 logger = logging.getLogger("rayinfo.collector.mes")
 
@@ -25,11 +26,30 @@ class MesCollector(BaseCollector):
     """
 
     name = "mes.search"
-    supports_parameters = False  # 未来可改 True 支持传入 query 参数
-    default_interval_seconds = 300  # 默认 5 分钟执行一次
+    supports_parameters = True  # 支持传入单个 query 作为参数
+    default_interval_seconds = 300  # 若配置文件里没给，使用该默认
 
-    # 简单示例关键词; 实际可改为配置加载
-    _queries: List[str] = ["机器学习", "人工智能 新闻"]
+    def __init__(self):
+        super().__init__()
+        self._loaded = False
+        self._query_jobs: list[tuple[str, int, str]] = []  # (query, interval, engine)
+
+    def _ensure_loaded(self):
+        if self._loaded:
+            return
+        settings = get_settings()
+        mes_cfg = settings.search.mes
+        self.default_interval_seconds = mes_cfg.interval_seconds
+        self._query_jobs = list(mes_cfg.iter_query_jobs())
+        self._loaded = True
+
+    def list_param_jobs(self) -> list[tuple[str, int]]:
+        """供调度器调用：返回 (query, interval_seconds).
+
+        调度器将为每个 query 创建独立 job，并在运行时传入 param=query。
+        """
+        self._ensure_loaded()
+        return [(q, interval) for q, interval, _engine in self._query_jobs]
 
     async def setup(self) -> None:  # 可选初始化, 这里暂无
         return None
@@ -87,9 +107,13 @@ class MesCollector(BaseCollector):
 
     async def fetch(self, param=None) -> AsyncIterator[RawEvent]:  # noqa: D401
         # 若未来 supports_parameters=True, 则 param 可以传入一个 query
-        queries = [param] if param else self._queries
+        self._ensure_loaded()
+        # 若传入单个 param，则只处理该 query；否则全部
+        queries = [param] if param else [q for q, _i, _e in self._query_jobs]
+        # 构建 per-query engine/interval map
+        engine_map = {q: eng for q, _i, eng in self._query_jobs}
         for q in queries:
-            engine = self._choose_engine(q)
+            engine = engine_map.get(q) or self._choose_engine(q)
             results = await self._run_mes(q, engine)
             for item in results:
                 # 结果字段: title, url, description, engine

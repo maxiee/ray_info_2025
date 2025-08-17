@@ -1,0 +1,32 @@
+# RayInfo 配置文件
+# 顶层结构
+# scheduler:
+#   timezone: "Asia/Shanghai"
+# search:
+#   mes:
+#     interval_seconds: 300         # 所有 mes.search 任务默认间隔（秒）
+#     engine: duckduckgo            # 默认搜索引擎（可预留 future: auto, google, bing）
+#     queries:                      # 要调度的查询关键词列表（每个关键词一个独立任务）
+#       - "机器学习"
+#       - "人工智能 新闻"
+#     per_query:                    # 可选：对单个 query 覆盖 interval 或 engine
+#       - query: "机器学习"
+#         interval_seconds: 180
+#       - query: "人工智能 新闻"
+#         interval_seconds: 600
+
+scheduler:
+  timezone: "UTC"
+
+search:
+  mes:
+    interval_seconds: 300
+    engine: duckduckgo
+    queries:
+      - "机器学习"
+      - "人工智能 新闻"
+    per_query:
+      - query: "机器学习"
+        interval_seconds: 180
+      - query: "人工智能 新闻"
+        interval_seconds: 600

@@ -35,17 +35,63 @@ class SchedulerAdapter:
             self.pipeline.run(events)
 
     def add_collector_job(self, collector: BaseCollector):
-        """给闹钟设时间，把“每隔 X 秒执行一次 Collector”写进调度器."""
+        """调度普通或参数化 Collector.
+
+        参数化：Collector.supports_parameters 为 True 且实现 list_param_jobs() -> list[(param, interval_seconds)]
+        则为每个参数生成 job_id = f"{collector.name}:{param}"。param 内若含空格或特殊字符，对日志影响有限，保持原样。
+        若未实现 list_param_jobs 则回退单任务。
+        """
+        if getattr(collector, "supports_parameters", False) and hasattr(
+            collector, "list_param_jobs"
+        ):
+            try:
+                param_jobs = collector.list_param_jobs()  # type: ignore[attr-defined]
+            except Exception as e:  # pragma: no cover
+                logger.error(
+                    "list_param_jobs failed collector=%s error=%s", collector.name, e
+                )
+                param_jobs = []
+            if param_jobs:
+                for param, interval in param_jobs:
+                    interval = interval or (collector.default_interval_seconds or 60)
+                    job_id = f"{collector.name}:{param}"
+
+                    async def param_job_wrapper(p=param, col=collector):
+                        # 在执行时传入参数 p
+                        logger.debug(
+                            "running parameterized job collector=%s param=%s",
+                            col.name,
+                            p,
+                        )
+                        events = []
+                        agen = col.fetch(param=p)  # type: ignore
+                        async for ev in agen:
+                            events.append(ev)
+                        if events:
+                            self.pipeline.run(events)
+
+                    self.scheduler.add_job(
+                        param_job_wrapper,
+                        IntervalTrigger(seconds=interval),
+                        id=job_id,
+                        replace_existing=True,
+                    )
+                    logger.info(
+                        "job added (param): %s param=%s interval=%ss",
+                        job_id,
+                        param,
+                        interval,
+                    )
+                return
+        # 非参数化路径
         interval = collector.default_interval_seconds or 60
         job_id = collector.name
 
-        # APScheduler (AsyncIOScheduler) 可直接调度协程函数
-        # 内部 async 闭包，APScheduler 实际调用的协程入口，值班提醒
         async def job_wrapper():
             await self.run_collector_once(collector)
 
         self.scheduler.add_job(
-            job_wrapper,  # 直接传入协程函数; AsyncIOScheduler 会在其事件循环中 create_task
+            job_wrapper,
             IntervalTrigger(seconds=interval),
             id=job_id,
             replace_existing=True,

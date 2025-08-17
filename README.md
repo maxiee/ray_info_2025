@@ -425,3 +425,50 @@ $ mes search "机器学习" --output json --limit 2
   }
 ]
 ```
+
+### 配置文件 (rayinfo.yaml)
+
+后端启动时会尝试在包根目录（`rayinfo_backend/rayinfo.yaml`）加载配置；若不存在则使用内置默认。
+
+当前已支持的顶层结构：
+
+```yaml
+scheduler:
+	timezone: "UTC"                # APScheduler 时区
+
+search:
+	mes:
+		interval_seconds: 300         # 默认所有 query 的间隔（秒）
+		engine: duckduckgo            # 默认搜索引擎
+		queries:                      # 需要调度的搜索关键词列表（每个关键词 = 一个任务）
+			- "机器学习"
+			- "人工智能 新闻"
+		per_query:                    # 可选，对单个 query 覆盖间隔 / 引擎
+			- query: "机器学习"
+				interval_seconds: 180
+			- query: "人工智能 新闻"
+				interval_seconds: 600
+```
+
+调度行为说明：
+
+1. 每个 `queries` 中的关键词会被 MesCollector 拆分成独立任务，Job ID 形式：`mes.search:<query>`。
+2. 若 `per_query` 为某个关键词指定了 `interval_seconds`，优先使用该间隔；否则使用 `interval_seconds` 全局默认。
+3. engine 字段未来可扩展为 `auto`（智能选择：优先 Google API 配额，超限回退 DuckDuckGo/Bing）。
+4. 修改 YAML 后需重启进程（暂未实现热加载）。
+
+内部数据模型：`MesSearchConfig` → `SearchConfig` → `Settings`，使用 Pydantic 构建，调用 `get_settings()` 即可获取。
+
+扩展指引：
+
+新增搜索引擎 collector 配置时，可在同级 `search:` 下添加例如 `bing:`、`google:` 子节，并仿照 `mes:` 定义 interval / queries / per_query；然后在对应 Collector 中读取 `settings.search.bing`。
+
+### 参数化 Collector 调度
+
+当 Collector 声明 `supports_parameters = True` 且实现 `list_param_jobs()`，调度器会：
+
+1. 调用 `collector.list_param_jobs()` 获取 `(param, interval_seconds)` 列表。
+2. 为每个参数注册独立 Job，传入 `fetch(param=...)`。
+3. Job ID 格式：`<collector.name>:<param>`。
+
+这允许一份代码对一组参数（关键词 / 用户 / 频道）生成指数级任务，同时保持代码去重与清晰度。
