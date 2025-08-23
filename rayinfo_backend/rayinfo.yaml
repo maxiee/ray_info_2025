@@ -39,6 +39,12 @@
 scheduler:
   timezone: "UTC"
 
+# 数据存储配置
+storage:
+  db_path: "./data/rayinfo.db"     # SQLite 数据库文件路径
+  batch_size: 100                  # 批量处理大小
+  enable_wal: true                 # 启用 WAL 模式（提升并发性能）
+
 # 新配置：search_engine 为一个数组，每个元素代表一个独立的搜索任务
 # 字段：
 #   query (str, 必填)            查询关键词

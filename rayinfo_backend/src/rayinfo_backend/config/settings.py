@@ -15,11 +15,23 @@ class SearchEngineItem(BaseModel):
     engine: str = Field(default="duckduckgo")
 
 
+class StorageConfig(BaseModel):
+    """存储配置模型
+    
+    定义数据库相关配置，包括数据库路径、批量处理大小等。
+    """
+    db_path: str = Field(default="./data/rayinfo.db", description="SQLite 数据库文件路径")
+    batch_size: int = Field(default=100, ge=1, description="批量处理大小")
+    enable_wal: bool = Field(default=True, description="是否启用 WAL 模式（提升并发性能）")
+
+
 class Settings(BaseModel):
     scheduler_timezone: str = Field(default="UTC")
     weibo_home_interval_seconds: int = Field(default=60)
     # 新结构：search_engine 是一个任务列表
     search_engine: List[SearchEngineItem] = Field(default_factory=list)
+    # 存储配置
+    storage: StorageConfig = Field(default_factory=StorageConfig)
 
     @staticmethod
     def from_yaml(path: Path | str) -> "Settings":
@@ -32,6 +44,8 @@ class Settings(BaseModel):
         scheduler_tz = data.get("scheduler", {}).get("timezone")
         # 新结构优先: 顶层 search_engine
         search_engine_list_raw = data.get("search_engine")
+        # 存储配置
+        storage_config_raw = data.get("storage", {})
         items: List[SearchEngineItem] = []
         if isinstance(search_engine_list_raw, list):
             for obj in search_engine_list_raw:
@@ -44,6 +58,7 @@ class Settings(BaseModel):
         settings = Settings(
             scheduler_timezone=scheduler_tz or "UTC",
             search_engine=items,
+            storage=StorageConfig(**storage_config_raw) if storage_config_raw else StorageConfig(),
         )
         return settings
 

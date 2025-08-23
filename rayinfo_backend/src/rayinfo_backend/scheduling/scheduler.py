@@ -5,7 +5,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..collectors.base import registry, BaseCollector, ParameterizedCollector
-from ..pipelines.base import Pipeline, DedupStage, PersistStage
+from ..pipelines.base import Pipeline, DedupStage, SqlitePersistStage
+from ..config.settings import get_settings
 
 logger = logging.getLogger("rayinfo.scheduler")
 
@@ -28,12 +29,22 @@ class SchedulerAdapter:
     def __init__(self):
         """初始化调度器适配器。
 
-        创建异步调度器实例和数据处理管道，管道包含去重阶段和持久化阶段。
+        创建异步调度器实例和数据处理管道，管道包含去重阶段和 SQLite 持久化阶段。
+        数据库路径从配置文件中读取。
         """
         # 负责定时触发任务（异步版，能直接跑协程），自动闹钟面板
         self.scheduler = AsyncIOScheduler()
-        # Collector 捞到的数据顺序加工，传送带
-        self.pipeline = Pipeline([DedupStage(), PersistStage()])
+        
+        # 从配置中获取存储设置
+        settings = get_settings()
+        
+        # Collector 捞到的数据顺序加工，传送带 - 现在使用真正的 SQLite 存储
+        self.pipeline = Pipeline([
+            DedupStage(max_size=1000),  # 去重阶段
+            SqlitePersistStage(settings.storage.db_path)  # SQLite 持久化阶段
+        ])
+        
+        logger.info(f"调度器初始化完成，数据库路径: {settings.storage.db_path}")
 
     def start(self):
         """启动调度器。
@@ -101,7 +112,7 @@ class SchedulerAdapter:
                     "list_param_jobs failed collector=%s error=%s", collector.name, e
                 )
                 param_jobs = []
-            
+
             if param_jobs:
                 for param, interval in param_jobs:
                     interval = interval or (collector.default_interval_seconds or 60)
@@ -134,7 +145,7 @@ class SchedulerAdapter:
                         interval,
                     )
                 return
-        
+
         # 非参数化路径 (包括 SimpleCollector 和其他 BaseCollector 子类)
         interval = collector.default_interval_seconds or 60
         job_id = collector.name
