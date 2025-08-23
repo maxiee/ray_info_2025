@@ -34,16 +34,18 @@ class SchedulerAdapter:
         """
         # 负责定时触发任务（异步版，能直接跑协程），自动闹钟面板
         self.scheduler = AsyncIOScheduler()
-        
+
         # 从配置中获取存储设置
         settings = get_settings()
-        
+
         # Collector 捞到的数据顺序加工，传送带 - 现在使用真正的 SQLite 存储
-        self.pipeline = Pipeline([
-            DedupStage(max_size=1000),  # 去重阶段
-            SqlitePersistStage(settings.storage.db_path)  # SQLite 持久化阶段
-        ])
-        
+        self.pipeline = Pipeline(
+            [
+                DedupStage(max_size=1000),  # 去重阶段
+                SqlitePersistStage(settings.storage.db_path),  # SQLite 持久化阶段
+            ]
+        )
+
         logger.info(f"调度器初始化完成，数据库路径: {settings.storage.db_path}")
 
     def start(self):
