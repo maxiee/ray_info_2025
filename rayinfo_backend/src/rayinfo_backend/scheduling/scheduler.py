@@ -11,20 +11,53 @@ logger = logging.getLogger("rayinfo.scheduler")
 
 
 class SchedulerAdapter:
+    """调度器适配器，负责管理和调度所有数据收集任务。
+
+    这个类封装了 APScheduler 异步调度器，提供了对数据收集器(Collector)的
+    统一调度管理。支持普通收集器和参数化收集器两种模式：
+    - 普通收集器：按固定间隔执行单个收集任务
+    - 参数化收集器：支持多个参数配置，每个参数对应一个独立的调度任务
+
+    收集到的数据会通过数据处理管道进行去重和持久化处理。
+
+    Attributes:
+        scheduler (AsyncIOScheduler): APScheduler 异步调度器，负责定时触发任务
+        pipeline (Pipeline): 数据处理管道，包含去重和持久化阶段
+    """
+
     def __init__(self):
+        """初始化调度器适配器。
+
+        创建异步调度器实例和数据处理管道，管道包含去重阶段和持久化阶段。
+        """
         # 负责定时触发任务（异步版，能直接跑协程），自动闹钟面板
         self.scheduler = AsyncIOScheduler()
         # Collector 捞到的数据顺序加工，传送带
         self.pipeline = Pipeline([DedupStage(), PersistStage()])
 
     def start(self):
+        """启动调度器。
+
+        开始执行所有已添加的定时任务。
+        """
         self.scheduler.start()
 
     def shutdown(self):
+        """关闭调度器。
+
+        停止所有正在运行的任务，不等待任务完成即立即关闭。
+        """
         self.scheduler.shutdown(wait=False)
 
     async def run_collector_once(self, collector: BaseCollector):
-        """让 Collector 抓取一批，聚合成列表后交给 pipeline."""
+        """执行单次数据收集任务。
+
+        调用指定收集器抓取数据，将获取的所有事件聚合成列表后
+        交给数据处理管道进行后续处理。
+
+        Args:
+            collector (BaseCollector): 要执行的数据收集器实例
+        """
         logger.info("[run] collector=%s", collector.name)
         events = []
         # 返回异步生成器；可以“边等网络边产出”而不是一次性全返回，减小等待时间浪费。
@@ -35,11 +68,29 @@ class SchedulerAdapter:
             self.pipeline.run(events)
 
     def add_collector_job(self, collector: BaseCollector):
-        """调度普通或参数化 Collector.
+        """添加数据收集器的调度任务。
 
-        参数化：Collector.supports_parameters 为 True 且实现 list_param_jobs() -> list[(param, interval_seconds)]
-        则为每个参数生成 job_id = f"{collector.name}:{param}"。param 内若含空格或特殊字符，对日志影响有限，保持原样。
-        若未实现 list_param_jobs 则回退单任务。
+        根据收集器类型自动选择调度模式：
+
+        1. 参数化收集器模式：
+           - 条件：collector.supports_parameters 为 True 且实现了 list_param_jobs() 方法
+           - 行为：为每个参数配置创建独立的调度任务
+           - 任务ID格式："{collector.name}:{param}"
+           - 每个参数任务使用独立的执行间隔
+
+        2. 普通收集器模式：
+           - 条件：不满足参数化模式条件时的回退方案
+           - 行为：创建单个调度任务
+           - 任务ID：collector.name
+           - 使用收集器默认间隔或60秒
+
+        Args:
+            collector (BaseCollector): 要添加调度的数据收集器实例
+
+        Note:
+            - 如果同名任务已存在，会替换现有任务
+            - 参数字符串中的空格或特殊字符会保持原样
+            - 调度间隔优先使用参数配置，否则使用收集器默认值
         """
         if getattr(collector, "supports_parameters", False) and hasattr(
             collector, "list_param_jobs"
@@ -99,5 +150,10 @@ class SchedulerAdapter:
         logger.info("job added: %s interval=%ss", job_id, interval)
 
     def load_all_collectors(self):
+        """加载并添加所有已注册的收集器任务。
+
+        遍历收集器注册表中的所有收集器，为每个收集器添加相应的调度任务。
+        这是批量初始化所有数据收集任务的便捷方法。
+        """
         for col in registry.all():
             self.add_collector_job(col)
