@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import random
 from typing import AsyncIterator
-from ..base import BaseCollector, RawEvent
+from ..base import SimpleCollector, RawEvent
 
 
-class WeiboHomeCollector(BaseCollector):
+class WeiboHomeCollector(SimpleCollector):
     name = "weibo.home"
-    supports_parameters = False
     default_interval_seconds = 60
 
     async def fetch(self, param=None) -> AsyncIterator[RawEvent]:  # noqa: D401

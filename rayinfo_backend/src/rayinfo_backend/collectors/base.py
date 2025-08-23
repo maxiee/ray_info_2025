@@ -24,13 +24,13 @@ class CollectorError(Exception):
 
 
 class BaseCollector(ABC):
-    """Collector 抽象基类.
+    """采集器抽象基类.
 
     约定: fetch 产生 RawEvent 流; 无需关心去重/持久化, 由 Pipeline 处理.
+    所有具体采集器都应继承 SimpleCollector 或 ParameterizedCollector.
     """
 
     name: str  # 唯一名称, 例如 "weibo.home"
-    supports_parameters: bool = False
     default_interval_seconds: int | None = None
 
     async def setup(self) -> None:  # 可选初始化
@@ -53,6 +53,63 @@ class BaseCollector(ABC):
 
     async def shutdown(self) -> None:  # 可选清理
         return None
+
+
+class SimpleCollector(BaseCollector):
+    """普通采集器基类.
+
+    不支持参数化，每次调用 fetch 时 param 应为 None.
+    适用于固定间隔抓取固定内容的场景，如微博首页、特定 RSS 源等.
+    """
+
+    @abstractmethod
+    async def fetch(
+        self, param: Any | None = None
+    ) -> AsyncIterator[RawEvent]:  # noqa: D401
+        """执行抓取并异步生成 RawEvent.
+
+        Args:
+            param: 应始终为 None，如传入非 None 值将被忽略
+
+        Yields:
+            RawEvent: 抓取到的原始事件数据
+        """
+        if False:  # pragma: no cover - 仅用于保持生成器语义
+            yield RawEvent(source="_", raw={})  # type: ignore
+        raise NotImplementedError
+
+
+class ParameterizedCollector(BaseCollector):
+    """参数化采集器基类.
+
+    支持根据不同参数执行不同的抓取任务.
+    适用于搜索引擎查询、用户时间线抓取等需要动态参数的场景.
+    """
+
+    @abstractmethod
+    def list_param_jobs(self) -> list[tuple[str, int]]:
+        """列出所有参数化任务配置.
+
+        Returns:
+            list[tuple[str, int]]: 参数任务列表，每个元组包含 (参数, 间隔秒数)
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def fetch(
+        self, param: Any | None = None
+    ) -> AsyncIterator[RawEvent]:  # noqa: D401
+        """根据参数执行抓取并异步生成 RawEvent.
+
+        Args:
+            param: 具体的抓取参数，如搜索关键词、用户ID等
+
+        Yields:
+            RawEvent: 抓取到的原始事件数据
+        """
+        if False:  # pragma: no cover - 仅用于保持生成器语义
+            yield RawEvent(source="_", raw={})  # type: ignore
+        raise NotImplementedError
 
 
 class CollectorRegistry:

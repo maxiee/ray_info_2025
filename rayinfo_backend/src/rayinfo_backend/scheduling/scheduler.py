@@ -4,7 +4,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from ..collectors.base import registry, BaseCollector
+from ..collectors.base import registry, BaseCollector, ParameterizedCollector
 from ..pipelines.base import Pipeline, DedupStage, PersistStage
 
 logger = logging.getLogger("rayinfo.scheduler")
@@ -73,13 +73,13 @@ class SchedulerAdapter:
         根据收集器类型自动选择调度模式：
 
         1. 参数化收集器模式：
-           - 条件：collector.supports_parameters 为 True 且实现了 list_param_jobs() 方法
+           - 条件：collector 是 ParameterizedCollector 的实例
            - 行为：为每个参数配置创建独立的调度任务
            - 任务ID格式："{collector.name}:{param}"
            - 每个参数任务使用独立的执行间隔
 
         2. 普通收集器模式：
-           - 条件：不满足参数化模式条件时的回退方案
+           - 条件：collector 是 SimpleCollector 的实例
            - 行为：创建单个调度任务
            - 任务ID：collector.name
            - 使用收集器默认间隔或60秒
@@ -92,16 +92,16 @@ class SchedulerAdapter:
             - 参数字符串中的空格或特殊字符会保持原样
             - 调度间隔优先使用参数配置，否则使用收集器默认值
         """
-        if getattr(collector, "supports_parameters", False) and hasattr(
-            collector, "list_param_jobs"
-        ):
+        # 检查是否为参数化采集器
+        if isinstance(collector, ParameterizedCollector):
             try:
-                param_jobs = collector.list_param_jobs()  # type: ignore[attr-defined]
+                param_jobs = collector.list_param_jobs()
             except Exception as e:  # pragma: no cover
                 logger.error(
                     "list_param_jobs failed collector=%s error=%s", collector.name, e
                 )
                 param_jobs = []
+            
             if param_jobs:
                 for param, interval in param_jobs:
                     interval = interval or (collector.default_interval_seconds or 60)
@@ -134,7 +134,8 @@ class SchedulerAdapter:
                         interval,
                     )
                 return
-        # 非参数化路径
+        
+        # 非参数化路径 (包括 SimpleCollector 和其他 BaseCollector 子类)
         interval = collector.default_interval_seconds or 60
         job_id = collector.name
 

@@ -5,13 +5,13 @@ import json
 import logging
 from typing import AsyncIterator, List, Dict, Any
 
-from ..base import BaseCollector, RawEvent
+from ..base import ParameterizedCollector, RawEvent
 from ...config.settings import get_settings
 
 logger = logging.getLogger("rayinfo.collector.mes")
 
 
-class MesCollector(BaseCollector):
+class MesCollector(ParameterizedCollector):
     """使用外部 `mes` CLI 进行多搜索引擎查询的采集器.
 
     当前实现：
@@ -22,11 +22,10 @@ class MesCollector(BaseCollector):
     未来扩展预留：
     - _choose_engine(): 支持 Google API 配额内优先使用, 超限降级到其它引擎
     - 外部配置驱动: 关键词列表、limit、时间窗口、引擎策略
-    - 参数化任务: supports_parameters=True 后由调度器传入不同 query 参数
+    - 参数化任务: 通过 list_param_jobs() 提供不同 query 参数
     """
 
     name = "mes.search"
-    supports_parameters = True  # 支持传入单个 query 作为参数
     default_interval_seconds = 300  # 若配置文件里没给，使用该默认
 
     def __init__(self):
