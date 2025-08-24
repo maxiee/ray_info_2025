@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator, List, Dict, Any
+from typing import AsyncIterator, List, Dict, Any, Optional
 
 from ..base import ParameterizedCollector, RawEvent
 from ...config.settings import get_settings
@@ -31,16 +31,16 @@ class MesCollector(ParameterizedCollector):
     def __init__(self):
         super().__init__()
         self._loaded = False
-        self._query_jobs: list[tuple[str, int, str]] = []  # (query, interval, engine)
+        self._query_jobs: list[tuple[str, int, str, Optional[str]]] = []  # (query, interval, engine, time_range)
 
     def _ensure_loaded(self):
         if self._loaded:
             return
         settings = get_settings()
-        # 新结构：settings.search_engine 是列表 (query, interval_seconds, engine)
+        # 新结构：settings.search_engine 是列表 (query, interval_seconds, engine, time_range)
         if settings.search_engine:
             self._query_jobs = [
-                (item.query, item.interval_seconds, item.engine)
+                (item.query, item.interval_seconds, item.engine, item.time_range)
                 for item in settings.search_engine
             ]
         else:
@@ -53,7 +53,7 @@ class MesCollector(ParameterizedCollector):
         调度器将为每个 query 创建独立 job，并在运行时传入 param=query。
         """
         self._ensure_loaded()
-        return [(q, interval) for q, interval, _engine in self._query_jobs]
+        return [(q, interval) for q, interval, _engine, _time_range in self._query_jobs]
 
     async def setup(self) -> None:  # 可选初始化, 这里暂无
         return None
@@ -67,7 +67,7 @@ class MesCollector(ParameterizedCollector):
         """
         return "duckduckgo"
 
-    async def _run_mes(self, query: str, engine: str) -> list[dict[str, Any]]:
+    async def _run_mes(self, query: str, engine: str, time_range: Optional[str] = None) -> list[dict[str, Any]]:
         """调用 mes CLI 并解析 JSON 输出.
 
         失败处理策略：
@@ -84,6 +84,9 @@ class MesCollector(ParameterizedCollector):
             "--output",
             "json",
         ]
+        # 添加时间范围参数（如果指定）
+        if time_range:
+            cmd.extend(["--time", time_range])
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -113,12 +116,14 @@ class MesCollector(ParameterizedCollector):
         # 若未来 supports_parameters=True, 则 param 可以传入一个 query
         self._ensure_loaded()
         # 若传入单个 param，则只处理该 query；否则全部
-        queries = [param] if param else [q for q, _i, _e in self._query_jobs]
-        # 构建 per-query engine/interval map
-        engine_map = {q: eng for q, _i, eng in self._query_jobs}
+        queries = [param] if param else [q for q, _i, _e, _tr in self._query_jobs]
+        # 构建 per-query engine/interval/time_range map
+        engine_map = {q: eng for q, _i, eng, _tr in self._query_jobs}
+        time_range_map = {q: tr for q, _i, _eng, tr in self._query_jobs}
         for q in queries:
             engine = engine_map.get(q) or self._choose_engine(q)
-            results = await self._run_mes(q, engine)
+            time_range = time_range_map.get(q)
+            results = await self._run_mes(q, engine, time_range)
             for item in results:
                 # 结果字段: title, url, description, engine
                 url = item.get("url") or ""

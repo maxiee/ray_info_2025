@@ -13,6 +13,11 @@ class SearchEngineItem(BaseModel):
     query: str
     interval_seconds: int = Field(ge=1)
     engine: str = Field(default="duckduckgo")
+    time_range: Optional[str] = Field(
+        default=None,
+        pattern="^[dwmy]$",
+        description="时间范围过滤：d=天, w=周, m=月, y=年"
+    )
 
 
 class StorageConfig(BaseModel):

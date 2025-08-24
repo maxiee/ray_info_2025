@@ -19,6 +19,15 @@
 # 12 小时  = 43200
 # 1 天     = 86400
 # 1 周     = 604800
+#
+# 搜索时间范围参数说明
+# ---------------------------------------
+# time_range 支持的值：
+#   d  - 最近一天的结果    (mes search "关键词" --time d)
+#   w  - 最近一周的结果    (mes search "关键词" --time w)  
+#   m  - 最近一月的结果    (mes search "关键词" --time m)
+#   y  - 最近一年的结果    (mes search "关键词" --time y)
+#   不设置 - 不进行时间过滤 (mes search "关键词")
 # ===============================================
 # 顶层结构
 # scheduler:
@@ -50,10 +59,17 @@ storage:
 #   query (str, 必填)            查询关键词
 #   interval_seconds (int, 必填) 执行间隔秒
 #   engine (str, 可选)           搜索引擎（默认 duckduckgo）
+#   time_range (str, 可选)       时间范围过滤（d=天, w=周, m=月, y=年, 默认不过滤）
 search_engine:
   - query: "机器学习"
     interval_seconds: 180
     engine: duckduckgo
+    time_range: d  # 最近一天的结果
   - query: "人工智能 新闻"
     interval_seconds: 600
     engine: duckduckgo
+    time_range: w  # 最近一周的结果
+  - query: "深度学习论文"
+    interval_seconds: 1800
+    engine: duckduckgo
+    time_range: m  # 最近一月的结果
