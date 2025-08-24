@@ -17,7 +17,10 @@ class MesCollector(ParameterizedCollector):
     当前实现：
     - 固定关键词列表（示例）与固定搜索引擎 (duckduckgo)
     - 运行: mes search <query> --output json --limit N
+    - 支持新的 JSON 格式: {"results": [...], "count": N, "rate_limit": {...}}
+    - 兼容旧的 JSON 格式: [result1, result2, ...]
     - 将每条结果转换为 RawEvent (post_id 使用结果 url 便于去重)
+    - 记录 API 使用配额信息
 
     未来扩展预留：
     - _choose_engine(): 支持 Google API 配额内优先使用, 超限降级到其它引擎
@@ -74,6 +77,10 @@ class MesCollector(ParameterizedCollector):
     ) -> list[dict[str, Any]]:
         """调用 mes CLI 并解析 JSON 输出.
 
+        支持新的 JSON 格式: {"results": [...], "count": N, "rate_limit": {...}}
+        兼容旧的 JSON 格式: [result1, result2, ...]
+        会记录 API 使用配额信息以供监控。
+
         失败处理策略：
         - 非 0 退出码: 记录日志并返回空列表
         - JSON 解析失败: 记录日志返回空列表
@@ -108,10 +115,30 @@ class MesCollector(ParameterizedCollector):
             return []
         try:
             data = json.loads(stdout.decode())
-            if not isinstance(data, list):
-                logger.warning("unexpected mes output type: %s", type(data))
+            # 适配新的 JSON 格式：{"results": [...], "count": N, "rate_limit": {...}}
+            if isinstance(data, dict) and "results" in data:
+                results = data["results"]
+                if not isinstance(results, list):
+                    logger.warning("unexpected mes results type: %s", type(results))
+                    return []
+                # 记录 rate_limit 信息（如果存在）
+                if "rate_limit" in data:
+                    rate_limit = data["rate_limit"]
+                    logger.info(
+                        "Search API rate limit info - used: %s/%s, remaining: %s, limit_exceeded: %s",
+                        rate_limit.get("requests_used", "unknown"),
+                        rate_limit.get("daily_limit", "unknown"),
+                        rate_limit.get("requests_remaining", "unknown"),
+                        rate_limit.get("limit_exceeded", "unknown")
+                    )
+                return results
+            # 兼容旧格式（直接是数组）
+            elif isinstance(data, list):
+                logger.info("Using legacy mes output format (direct array)")
+                return data
+            else:
+                logger.warning("unexpected mes output format: %s", type(data))
                 return []
-            return data  # type: ignore
         except json.JSONDecodeError as e:  # pragma: no cover - 解析异常日志
             logger.error("parse mes json failed query=%s error=%s", query, e)
             return []
