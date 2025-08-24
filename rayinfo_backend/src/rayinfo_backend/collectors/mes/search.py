@@ -31,7 +31,9 @@ class MesCollector(ParameterizedCollector):
     def __init__(self):
         super().__init__()
         self._loaded = False
-        self._query_jobs: list[tuple[str, int, str, Optional[str]]] = []  # (query, interval, engine, time_range)
+        self._query_jobs: list[tuple[str, int, str, Optional[str]]] = (
+            []
+        )  # (query, interval, engine, time_range)
 
     def _ensure_loaded(self):
         if self._loaded:
@@ -67,7 +69,9 @@ class MesCollector(ParameterizedCollector):
         """
         return "duckduckgo"
 
-    async def _run_mes(self, query: str, engine: str, time_range: Optional[str] = None) -> list[dict[str, Any]]:
+    async def _run_mes(
+        self, query: str, engine: str, time_range: Optional[str] = None
+    ) -> list[dict[str, Any]]:
         """调用 mes CLI 并解析 JSON 输出.
 
         失败处理策略：
