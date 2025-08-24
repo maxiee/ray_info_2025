@@ -117,27 +117,59 @@ class MesCollector(ParameterizedCollector):
             return []
 
     async def fetch(self, param=None) -> AsyncIterator[RawEvent]:  # noqa: D401
-        # 若未来 supports_parameters=True, 则 param 可以传入一个 query
+        """执行搜索任务并返回结果事件。
+
+        作为参数化采集器，此方法必须接收具体的查询参数(param)。
+        调度器会为每个配置的查询创建独立任务，并传入对应的查询关键词。
+
+        Args:
+            param: 查询关键词字符串，由调度器传入。对于参数化采集器，不应为None。
+
+        Yields:
+            RawEvent: 包含搜索结果的原始事件
+        """
         self._ensure_loaded()
-        # 若传入单个 param，则只处理该 query；否则全部
-        queries = [param] if param else [q for q, _i, _e, _tr in self._query_jobs]
-        # 构建 per-query engine/interval/time_range map
+
+        if param is None:
+            # 对于参数化采集器，param 不应为 None
+            # 这通常表示调度器配置错误或直接调用了 fetch() 而没有参数
+            logger.warning(
+                "MesCollector.fetch() called without param, this should not happen in normal operation. "
+                "Parameterized collectors require specific query parameters."
+            )
+            return
+
+        # 只处理传入的特定查询参数
+        query = param
+
+        # 构建 per-query engine/time_range map
         engine_map = {q: eng for q, _i, eng, _tr in self._query_jobs}
         time_range_map = {q: tr for q, _i, _eng, tr in self._query_jobs}
-        for q in queries:
-            engine = engine_map.get(q) or self._choose_engine(q)
-            time_range = time_range_map.get(q)
-            results = await self._run_mes(q, engine, time_range)
-            for item in results:
-                # 结果字段: title, url, description, engine
-                url = item.get("url") or ""
-                # post_id 用 url 作为去重键 (若缺失则 hash 整个对象)
-                raw: Dict[str, Any] = {
-                    "post_id": url or json.dumps(item, ensure_ascii=False),
-                    "query": q,
-                    "title": item.get("title"),
-                    "url": url,
-                    "description": item.get("description"),
-                    "engine": item.get("engine"),
-                }
-                yield RawEvent(source=self.name, raw=raw)
+
+        # 获取该查询的配置
+        engine = engine_map.get(query) or self._choose_engine(query)
+        time_range = time_range_map.get(query)
+
+        logger.info(
+            "执行搜索任务: query=%s, engine=%s, time_range=%s",
+            query,
+            engine,
+            time_range,
+        )
+
+        # 执行搜索
+        results = await self._run_mes(query, engine, time_range)
+
+        for item in results:
+            # 结果字段: title, url, description, engine
+            url = item.get("url") or ""
+            # post_id 用 url 作为去重键 (若缺失则 hash 整个对象)
+            raw: Dict[str, Any] = {
+                "post_id": url or json.dumps(item, ensure_ascii=False),
+                "query": query,
+                "title": item.get("title"),
+                "url": url,
+                "description": item.get("description"),
+                "engine": item.get("engine"),
+            }
+            yield RawEvent(source=self.name, raw=raw)
