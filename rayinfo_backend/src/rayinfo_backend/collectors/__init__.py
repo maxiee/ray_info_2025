@@ -17,7 +17,7 @@ import logging
 import pkgutil
 from types import ModuleType
 
-from .base import BaseCollector, registry
+from .base import BaseCollector, SimpleCollector, ParameterizedCollector, registry
 
 logger = logging.getLogger("rayinfo.collectors")
 
@@ -46,7 +46,20 @@ def discover_and_register(package_root: str = __name__):
             logger.warning("import module failed: %s error=%s", module_name, e)
             continue
         for _, obj in inspect.getmembers(mod, inspect.isclass):
-            if not issubclass(obj, BaseCollector) or obj is BaseCollector:
+            # 跳过非 BaseCollector 子类和抽象基类
+            if not issubclass(obj, BaseCollector):
+                continue
+            # 跳过抽象基类：BaseCollector, SimpleCollector, ParameterizedCollector
+            if obj in (BaseCollector, SimpleCollector, ParameterizedCollector):
+                continue
+            # 跳过其他抽象类（通过检查是否有未实现的抽象方法）
+            if getattr(obj, "__abstractmethods__", None):
+                logger.debug(
+                    "跳过抽象类: %s.%s (有未实现的抽象方法: %s)",
+                    obj.__module__,
+                    obj.__name__,
+                    obj.__abstractmethods__,
+                )
                 continue
             qual = f"{obj.__module__}.{obj.__name__}"
             if qual in _registered_classes:
