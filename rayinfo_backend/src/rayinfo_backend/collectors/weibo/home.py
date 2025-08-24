@@ -19,4 +19,5 @@ class WeiboHomeCollector(SimpleCollector):
                     "post_id": f"sim_{random.randint(1000,9999)}",
                     "text": f"模拟微博首页内容 {i}",
                 },
+                debug=True,
             )

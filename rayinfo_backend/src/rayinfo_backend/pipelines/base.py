@@ -78,7 +78,7 @@ class SqlitePersistStage(PipelineStage):
 
         # 过滤掉 debug=True 的事件，不进行持久化
         events_to_persist = [event for event in events if not event.debug]
-        
+
         # 如果没有需要持久化的事件，直接返回
         if not events_to_persist:
             debug_count = len(events) - len(events_to_persist)
