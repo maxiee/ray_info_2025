@@ -7,6 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from ..collectors.base import registry, BaseCollector, ParameterizedCollector
 from ..pipelines.base import Pipeline, DedupStage, SqlitePersistStage
 from ..config.settings import get_settings
+from ..utils.instance_id import instance_manager
 
 logger = logging.getLogger("rayinfo.scheduler")
 
@@ -120,6 +121,9 @@ class SchedulerAdapter:
                     interval = interval or (collector.default_interval_seconds or 60)
                     job_id = f"{collector.name}:{param}"
 
+                    # 生成并注册实例ID
+                    instance_id = instance_manager.register_instance(collector, param)
+
                     async def param_job_wrapper(p=param, col=collector):
                         # 在执行时传入参数 p
                         logger.debug(
@@ -141,16 +145,20 @@ class SchedulerAdapter:
                         replace_existing=True,
                     )
                     logger.info(
-                        "job added (param): %s param=%s interval=%ss",
+                        "job added (param): %s param=%s interval=%ss instance_id=%s",
                         job_id,
                         param,
                         interval,
+                        instance_id,
                     )
                 return
 
         # 非参数化路径 (包括 SimpleCollector 和其他 BaseCollector 子类)
         interval = collector.default_interval_seconds or 60
         job_id = collector.name
+
+        # 生成并注册实例ID（普通采集器param为None）
+        instance_id = instance_manager.register_instance(collector, None)
 
         async def job_wrapper():
             await self.run_collector_once(collector)
@@ -161,7 +169,9 @@ class SchedulerAdapter:
             id=job_id,
             replace_existing=True,
         )
-        logger.info("job added: %s interval=%ss", job_id, interval)
+        logger.info(
+            "job added: %s interval=%ss instance_id=%s", job_id, interval, instance_id
+        )
 
     def load_all_collectors(self):
         """加载并添加所有已注册的收集器任务。
@@ -171,3 +181,57 @@ class SchedulerAdapter:
         """
         for col in registry.all():
             self.add_collector_job(col)
+
+    async def run_instance_by_id(self, instance_id: str) -> dict[str, str]:
+        """根据实例ID手动触发采集器实例。
+
+        Args:
+            instance_id: 采集器实例的唯一ID
+
+        Returns:
+            dict[str, str]: 执行结果，包含状态和消息
+
+        Raises:
+            ValueError: 当实例ID不存在时抛出异常
+        """
+        # 获取实例信息
+        instance = instance_manager.get_instance(instance_id)
+        if instance is None:
+            raise ValueError(f"Instance not found: {instance_id}")
+
+        try:
+            if instance.param is None:
+                # 普通采集器
+                logger.info(
+                    "[manual] 手动触发普通采集器实例 collector=%s instance_id=%s",
+                    instance.collector.name,
+                    instance_id,
+                )
+                await self.run_collector_once(instance.collector)
+            else:
+                # 参数化采集器
+                logger.info(
+                    "[manual] 手动触发参数化采集器实例 collector=%s param=%s instance_id=%s",
+                    instance.collector.name,
+                    instance.param,
+                    instance_id,
+                )
+                events = []
+                agen = instance.collector.fetch(param=instance.param)  # type: ignore
+                async for ev in agen:
+                    events.append(ev)
+                if events:
+                    self.pipeline.run(events)
+
+            return {
+                "status": "success",
+                "message": f"Successfully triggered instance {instance_id}",
+            }
+        except Exception as e:
+            logger.error(
+                "[manual] 手动触发实例失败 instance_id=%s error=%s", instance_id, str(e)
+            )
+            return {
+                "status": "error",
+                "message": f"Failed to trigger instance {instance_id}: {str(e)}",
+            }
