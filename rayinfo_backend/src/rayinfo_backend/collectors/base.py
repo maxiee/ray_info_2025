@@ -18,6 +18,9 @@ class RawEvent:
     # 抓取发生的时间（Unix 秒）
     fetched_at: float = field(default_factory=time.time)
 
+    # 调试标记，如果为 True，该事件不会被持久化到数据库
+    debug: bool = False
+
 
 class CollectorError(Exception):
     pass

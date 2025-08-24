@@ -76,12 +76,23 @@ class SqlitePersistStage(PipelineStage):
         if not events:
             return events
 
+        # 过滤掉 debug=True 的事件，不进行持久化
+        events_to_persist = [event for event in events if not event.debug]
+        
+        # 如果没有需要持久化的事件，直接返回
+        if not events_to_persist:
+            debug_count = len(events) - len(events_to_persist)
+            if debug_count > 0:
+                self.logger.info(f"跳过了 {debug_count} 个 debug 事件，不进行持久化")
+            return events
+
         session = self.db_manager.get_session()
         saved_count = 0
         error_count = 0
+        debug_count = len(events) - len(events_to_persist)
 
         try:
-            for event in events:
+            for event in events_to_persist:
                 try:
                     raw_data = event.raw
 
@@ -115,6 +126,8 @@ class SqlitePersistStage(PipelineStage):
                 self.logger.info(f"成功保存 {saved_count} 条记录到数据库")
             if error_count > 0:
                 self.logger.warning(f"保存过程中有 {error_count} 条记录失败")
+            if debug_count > 0:
+                self.logger.info(f"跳过了 {debug_count} 个 debug 事件，不进行持久化")
 
         except Exception as e:
             session.rollback()
