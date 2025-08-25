@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Protocol
 from dataclasses import dataclass, field
 import time
 
@@ -34,7 +34,12 @@ class BaseCollector(ABC):
     """
 
     name: str  # 唯一名称, 例如 "weibo.home"
-    default_interval_seconds: int | None = None
+    
+    @property
+    @abstractmethod
+    def default_interval_seconds(self) -> int | None:
+        """获取默认执行间隔（秒）"""
+        raise NotImplementedError
 
     async def setup(self) -> None:  # 可选初始化
         return None
@@ -59,10 +64,11 @@ class BaseCollector(ABC):
 
 
 class SimpleCollector(BaseCollector):
-    """普通采集器基类.
+    """普通采集器基类
 
     不支持参数化，每次调用 fetch 时 param 应为 None.
     适用于固定间隔抓取固定内容的场景，如微博首页、特定 RSS 源等.
+    实现 Schedulable 接口，支持调度能力。
     """
 
     @abstractmethod
@@ -80,13 +86,20 @@ class SimpleCollector(BaseCollector):
         if False:  # pragma: no cover - 仅用于保持生成器语义
             yield RawEvent(source="_", raw={})  # type: ignore
         raise NotImplementedError
+    
+    # 实现 Schedulable 接口
+    @property
+    def default_interval_seconds(self) -> int | None:
+        """获取默认执行间隔（秒）"""
+        return getattr(self, '_default_interval_seconds', None)
 
 
 class ParameterizedCollector(BaseCollector):
-    """参数化采集器基类.
+    """参数化采集器基类
 
     支持根据不同参数执行不同的抓取任务.
     适用于搜索引擎查询、用户时间线抓取等需要动态参数的场景.
+    同时实现 Schedulable 和 Parameterizable 接口。
     """
 
     @abstractmethod
@@ -113,6 +126,12 @@ class ParameterizedCollector(BaseCollector):
         if False:  # pragma: no cover - 仅用于保持生成器语义
             yield RawEvent(source="_", raw={})  # type: ignore
         raise NotImplementedError
+    
+    # 实现 Schedulable 接口
+    @property
+    def default_interval_seconds(self) -> int | None:
+        """获取默认执行间隔（秒）"""
+        return getattr(self, '_default_interval_seconds', None)
 
 
 class CollectorRegistry:

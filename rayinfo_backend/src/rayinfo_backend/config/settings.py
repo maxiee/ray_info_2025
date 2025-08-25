@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 from typing import List, Optional
 import logging
+import os
 
 logger = logging.getLogger("rayinfo.config")
 
@@ -29,6 +30,12 @@ class StorageConfig(BaseModel):
     db_path: str = Field(
         default="./data/rayinfo.db", description="SQLite 数据库文件路径"
     )
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # 支持环境变量覆盖数据库路径
+        if "RAYINFO_DB_PATH" in os.environ:
+            self.db_path = os.environ["RAYINFO_DB_PATH"]
     batch_size: int = Field(default=100, ge=1, description="批量处理大小")
     enable_wal: bool = Field(
         default=True, description="是否启用 WAL 模式（提升并发性能）"
@@ -45,36 +52,42 @@ class Settings(BaseModel):
 
     @staticmethod
     def from_yaml(path: Path | str) -> "Settings":
-        p = Path(path)
-        if not p.exists():
-            # 返回默认，允许缺省文件
-            return Settings()
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        # 兼容：顶层 scheduler.timezone
-        scheduler_tz = data.get("scheduler", {}).get("timezone")
-        # 新结构优先: 顶层 search_engine
-        search_engine_list_raw = data.get("search_engine")
-        # 存储配置
-        storage_config_raw = data.get("storage", {})
-        items: List[SearchEngineItem] = []
-        if isinstance(search_engine_list_raw, list):
-            for obj in search_engine_list_raw:
-                try:
-                    items.append(SearchEngineItem(**obj))
-                except Exception as e:  # pragma: no cover - 容错日志
-                    logger.warning(
-                        "invalid search_engine item skipped=%s error=%s", obj, e
-                    )
-        settings = Settings(
-            scheduler_timezone=scheduler_tz or "UTC",
-            search_engine=items,
-            storage=(
-                StorageConfig(**storage_config_raw)
-                if storage_config_raw
-                else StorageConfig()
-            ),
+        """从 YAML 文件加载配置（已弃用，使用 from_config_loaders 代替）
+        
+        Args:
+            path: YAML 文件路径
+            
+        Returns:
+            Settings 实例
+        """
+        import warnings
+        warnings.warn(
+            "from_yaml 方法已弃用，请使用 from_config_loaders，"
+            "将在下一个版本中移除",
+            DeprecationWarning,
+            stacklevel=2
         )
-        return settings
+        
+        # 为向后兼容，使用新的加载器实现
+        from .loaders import YamlConfigLoader, ConfigParser
+        loader = YamlConfigLoader(path)
+        config_data = loader.load()
+        return ConfigParser.parse(config_data)
+    
+    @staticmethod
+    def from_config_loaders() -> "Settings":
+        """使用新的配置加载器模式加载配置
+        
+        按优先级顺序合并多个配置源：默认配置 < YAML文件 < 环境变量
+        
+        Returns:
+            Settings 实例
+        """
+        from .loaders import create_default_config_loader, ConfigParser
+        
+        loader = create_default_config_loader()
+        config_data = loader.load()
+        return ConfigParser.parse(config_data)
 
 
 _settings: Settings | None = None
@@ -109,8 +122,14 @@ logger.debug(
 
 
 def get_settings() -> Settings:
+    """获取全局配置实例
+    
+    使用新的配置加载器模式，支持多配置源合并。
+    
+    Returns:
+        Settings实例
+    """
     global _settings
     if _settings is None:
-        # 约定：仓库根目录（包上三层）包含 rayinfo.yaml
-        _settings = Settings.from_yaml(_settings_path)
+        _settings = Settings.from_config_loaders()
     return _settings
