@@ -29,7 +29,7 @@ class MesCollector(ParameterizedCollector):
     """
 
     name = "mes.search"
-    default_interval_seconds = 300  # 若配置文件里没给，使用该默认
+    _default_interval_seconds = 300  # 若配置文件里没给，使用该默认
 
     def __init__(self):
         super().__init__()
@@ -129,7 +129,7 @@ class MesCollector(ParameterizedCollector):
                         rate_limit.get("requests_used", "unknown"),
                         rate_limit.get("daily_limit", "unknown"),
                         rate_limit.get("requests_remaining", "unknown"),
-                        rate_limit.get("limit_exceeded", "unknown")
+                        rate_limit.get("limit_exceeded", "unknown"),
                     )
                 return results
             # 兼容旧格式（直接是数组）

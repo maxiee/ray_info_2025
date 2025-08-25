@@ -8,7 +8,7 @@ from ..base import SimpleCollector, RawEvent
 
 class WeiboHomeCollector(SimpleCollector):
     name = "weibo.home"
-    default_interval_seconds = 60
+    _default_interval_seconds = 60
 
     async def fetch(self, param=None) -> AsyncIterator[RawEvent]:  # noqa: D401
         await asyncio.sleep(0.05)
