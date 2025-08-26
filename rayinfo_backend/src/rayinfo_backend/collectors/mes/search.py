@@ -173,8 +173,16 @@ class MesCollector(ParameterizedCollector):
         query = param
 
         # 构建 per-query engine/time_range map
-        engine_map = {q: eng for q, _i, eng, _tr in self._query_jobs}
-        time_range_map = {q: tr for q, _i, _eng, tr in self._query_jobs}
+        # 使用显式循环而不是字典推导以提高可读性：
+        # - 遍历 self._query_jobs 中的条目 (query, interval, engine, time_range)
+        # - 为每个 query 分别记录其 engine 和 time_range
+        engine_map: dict[str, str] = {}
+        time_range_map: dict[str, Optional[str]] = {}
+        for q, _interval, eng, tr in self._query_jobs:
+            # 如果配置中出现重复的 query，后面的配置将覆盖前面的值，
+            # 这与原先 dict comprehension 的行为一致。
+            engine_map[q] = eng
+            time_range_map[q] = tr
 
         # 获取该查询的配置
         engine = engine_map.get(query) or self._choose_engine(query)
