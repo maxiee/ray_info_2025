@@ -5,14 +5,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..collectors.base import registry, BaseCollector, ParameterizedCollector
-from ..pipelines.base import Pipeline, DedupStage, SqlitePersistStage
+from ..pipelines import Pipeline, DedupStage, SqlitePersistStage
 from ..config.settings import get_settings
 from ..utils.instance_id import instance_manager
 from .strategies import (
     create_default_strategy_registry,
     SimpleJobFactory,
     ParameterizedJobFactory,
-    StrategyRegistry
+    StrategyRegistry,
 )
 
 logger = logging.getLogger("rayinfo.scheduler")
@@ -60,11 +60,11 @@ class SchedulerAdapter:
         # 初始化策略模式组件
         self.strategy_registry = create_default_strategy_registry()
         self.simple_job_factory = SimpleJobFactory(self.run_collector_once)
-        
+
         # 为参数化任务工厂创建适配器函数
         def pipeline_runner(events: list) -> None:
             self.pipeline.run(events)
-        
+
         self.param_job_factory = ParameterizedJobFactory(pipeline_runner)
 
         logger.info(f"调度器初始化完成，数据库路径: {settings.storage.db_path}")
@@ -122,28 +122,26 @@ class SchedulerAdapter:
         try:
             # 获取对应的调度策略
             strategy = self.strategy_registry.get_strategy(collector)
-            
+
             # 选择合适的任务工厂
             if isinstance(collector, ParameterizedCollector):
                 job_factory = self.param_job_factory
             else:
                 job_factory = self.simple_job_factory
-            
+
             # 使用策略执行调度
             job_ids = strategy.schedule_job(collector, self.scheduler, job_factory)
-            
+
             logger.info(
-                "采集器调度完成 collector=%s 添加任务数=%d", 
-                collector.name, len(job_ids)
+                "采集器调度完成 collector=%s 添加任务数=%d",
+                collector.name,
+                len(job_ids),
             )
-            
+
             return job_ids
-            
+
         except Exception as e:
-            logger.error(
-                "添加采集器任务失败 collector=%s error=%s", 
-                collector.name, e
-            )
+            logger.error("添加采集器任务失败 collector=%s error=%s", collector.name, e)
             return []
 
     def load_all_collectors(self):
