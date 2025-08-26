@@ -29,7 +29,6 @@ class MesCollector(ParameterizedCollector):
     """
 
     name = "mes.search"
-    _default_interval_seconds = 300  # 若配置文件里没给，使用该默认
 
     def __init__(self):
         super().__init__()
@@ -37,6 +36,10 @@ class MesCollector(ParameterizedCollector):
         self._query_jobs: list[tuple[str, int, str, Optional[str]]] = (
             []
         )  # (query, interval, engine, time_range)
+
+    @property
+    def default_interval_seconds(self) -> int | None:
+        return 300
 
     def _ensure_loaded(self):
         if self._loaded:

@@ -34,7 +34,7 @@ class BaseCollector(ABC):
     """
 
     name: str  # 唯一名称, 例如 "weibo.home"
-    
+
     @property
     @abstractmethod
     def default_interval_seconds(self) -> int | None:
@@ -86,12 +86,12 @@ class SimpleCollector(BaseCollector):
         if False:  # pragma: no cover - 仅用于保持生成器语义
             yield RawEvent(source="_", raw={})  # type: ignore
         raise NotImplementedError
-    
+
     # 实现 Schedulable 接口
     @property
     def default_interval_seconds(self) -> int | None:
         """获取默认执行间隔（秒）"""
-        return getattr(self, '_default_interval_seconds', None)
+        return getattr(self, "_default_interval_seconds", None)
 
 
 class ParameterizedCollector(BaseCollector):
@@ -126,12 +126,6 @@ class ParameterizedCollector(BaseCollector):
         if False:  # pragma: no cover - 仅用于保持生成器语义
             yield RawEvent(source="_", raw={})  # type: ignore
         raise NotImplementedError
-    
-    # 实现 Schedulable 接口
-    @property
-    def default_interval_seconds(self) -> int | None:
-        """获取默认执行间隔（秒）"""
-        return getattr(self, '_default_interval_seconds', None)
 
 
 class CollectorRegistry:
