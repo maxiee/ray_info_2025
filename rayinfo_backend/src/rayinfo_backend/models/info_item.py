@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Dict, Any, Optional
+import threading
 
 from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -84,10 +85,31 @@ class RawInfoItem(Base):
 
 
 class DatabaseManager:
-    """数据库管理器
+    """数据库管理器（单例模式）
 
     提供数据库连接和会话管理功能，支持自动创建表结构。
+    采用线程安全的单例模式，确保全局只有一个数据库管理器实例。
     """
+    
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls, db_path: str = "rayinfo.db"):
+        """单例模式实现
+        
+        Args:
+            db_path: SQLite 数据库文件路径
+            
+        Returns:
+            DatabaseManager: 单例实例
+        """
+        if cls._instance is None:
+            with cls._lock:
+                # 双重检查锁定
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
 
     def __init__(self, db_path: str = "rayinfo.db"):
         """初始化数据库管理器
@@ -95,6 +117,10 @@ class DatabaseManager:
         Args:
             db_path: SQLite 数据库文件路径
         """
+        # 确保只初始化一次
+        if self._initialized:
+            return
+            
         self.db_path = db_path
         self.engine = create_engine(
             f"sqlite:///{db_path}",
@@ -102,10 +128,13 @@ class DatabaseManager:
             connect_args={"check_same_thread": False},
             echo=False,  # 设为 True 可查看 SQL 语句
         )
-        # 创建表结构
-        Base.metadata.create_all(self.engine)
+        # 线程安全地创建表结构
+        with self.__class__._lock:
+            Base.metadata.create_all(self.engine, checkfirst=True)
         # 创建会话工厂
         self.Session = sessionmaker(bind=self.engine)
+        
+        self._initialized = True
 
     def get_session(self):
         """获取数据库会话"""
@@ -118,3 +147,24 @@ class DatabaseManager:
     def drop_tables(self):
         """删除所有表结构（慎用）"""
         Base.metadata.drop_all(self.engine)
+    
+    @classmethod
+    def reset_instance(cls):
+        """重置单例实例（主要用于测试）
+        
+        注意：这个方法应该谨慎使用，主要用于单元测试中重置状态。
+        """
+        with cls._lock:
+            cls._instance = None
+    
+    @classmethod
+    def get_instance(cls, db_path: str = "rayinfo.db") -> 'DatabaseManager':
+        """获取单例实例的便捷方法
+        
+        Args:
+            db_path: SQLite 数据库文件路径
+            
+        Returns:
+            DatabaseManager: 单例实例
+        """
+        return cls(db_path)

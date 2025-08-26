@@ -417,7 +417,8 @@ class SqlitePersistStage(PipelineStage):
         super().__init__("SqlitePersistStage")
         self.db_path = db_path
         self.batch_size = batch_size
-        self.db_manager = DatabaseManager(db_path)
+        # 使用单例的 DatabaseManager
+        self.db_manager = DatabaseManager.get_instance(db_path)
         
         # 持久化统计
         self._persist_stats = {
@@ -427,7 +428,7 @@ class SqlitePersistStage(PipelineStage):
             "validation_failed_count": 0,
         }
         
-        self.logger.info(f"SQLite 持久化阶段初始化完成，数据库路径: {db_path}")
+        self.logger.info(f"SQLite 持久化阶段初始化完成，数据库路径: {db_path}（使用单例模式）")
     
     def _process_impl(self, events: list[RawEvent]) -> list[RawEvent]:
         """实际的持久化处理逻辑"""
