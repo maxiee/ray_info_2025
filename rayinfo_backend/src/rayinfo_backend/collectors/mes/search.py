@@ -32,18 +32,18 @@ class MesCollector(ParameterizedCollector):
 
     def __init__(self):
         super().__init__()
-        self._loaded = False
         self._query_jobs: list[tuple[str, int, str, Optional[str]]] = (
             []
         )  # (query, interval, engine, time_range)
+        self._engine_map: dict[str, str] = {}
+        self._time_range_map: dict[str, Optional[str]] = {}
 
     @property
     def default_interval_seconds(self) -> int | None:
         return 300
 
-    def _ensure_loaded(self):
-        if self._loaded:
-            return
+    def _load_config_and_build_maps(self):
+        """加载配置并构建引擎和时间范围映射。"""
         settings = get_settings()
         # 新结构：settings.search_engine 是列表 (query, interval_seconds, engine, time_range)
         if settings.search_engine:
@@ -53,18 +53,37 @@ class MesCollector(ParameterizedCollector):
             ]
         else:
             self._query_jobs = []
-        self._loaded = True
+
+        # 构建 per-query engine/time_range map
+        # 使用显式循环而不是字典推导以提高可读性：
+        # - 遍历 self._query_jobs 中的条目 (query, interval, engine, time_range)
+        # - 为每个 query 分别记录其 engine 和 time_range
+        self._engine_map.clear()
+        self._time_range_map.clear()
+        for q, _interval, eng, tr in self._query_jobs:
+            # 如果配置中出现重复的 query，后面的配置将覆盖前面的值，
+            # 这与原先 dict comprehension 的行为一致。
+            self._engine_map[q] = eng
+            self._time_range_map[q] = tr
 
     def list_param_jobs(self) -> list[tuple[str, int]]:
         """供调度器调用：返回 (query, interval_seconds).
 
         调度器将为每个 query 创建独立 job，并在运行时传入 param=query。
         """
-        self._ensure_loaded()
         return [(q, interval) for q, interval, _engine, _time_range in self._query_jobs]
 
-    async def setup(self) -> None:  # 可选初始化, 这里暂无
-        return None
+    async def setup(self) -> None:
+        """初始化采集器：加载配置并构建引擎和时间范围映射。
+
+        在这里一次性完成：
+        1. 从设置中加载查询任务配置
+        2. 构建 engine_map 和 time_range_map 映射
+
+        这样在后续的 fetch 方法中可以直接使用预构建的映射，
+        避免每次执行时重复计算，提高性能和代码清晰度。
+        """
+        self._load_config_and_build_maps()
 
     def _choose_engine(self, query: str) -> str:
         """预留搜索引擎选择策略.
@@ -158,8 +177,6 @@ class MesCollector(ParameterizedCollector):
         Yields:
             RawEvent: 包含搜索结果的原始事件
         """
-        self._ensure_loaded()
-
         if param is None:
             # 对于参数化采集器，param 不应为 None
             # 这通常表示调度器配置错误或直接调用了 fetch() 而没有参数
@@ -172,21 +189,9 @@ class MesCollector(ParameterizedCollector):
         # 只处理传入的特定查询参数
         query = param
 
-        # 构建 per-query engine/time_range map
-        # 使用显式循环而不是字典推导以提高可读性：
-        # - 遍历 self._query_jobs 中的条目 (query, interval, engine, time_range)
-        # - 为每个 query 分别记录其 engine 和 time_range
-        engine_map: dict[str, str] = {}
-        time_range_map: dict[str, Optional[str]] = {}
-        for q, _interval, eng, tr in self._query_jobs:
-            # 如果配置中出现重复的 query，后面的配置将覆盖前面的值，
-            # 这与原先 dict comprehension 的行为一致。
-            engine_map[q] = eng
-            time_range_map[q] = tr
-
-        # 获取该查询的配置
-        engine = engine_map.get(query) or self._choose_engine(query)
-        time_range = time_range_map.get(query)
+        # 直接使用在 setup 中预构建的映射
+        engine = self._engine_map.get(query) or self._choose_engine(query)
+        time_range = self._time_range_map.get(query)
 
         logger.info(
             "执行搜索任务: query=%s, engine=%s, time_range=%s",
