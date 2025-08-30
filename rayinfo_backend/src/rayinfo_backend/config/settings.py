@@ -21,6 +21,28 @@ class SearchEngineItem(BaseModel):
     )
 
 
+class StateManagementConfig(BaseModel):
+    """状态管理配置模型
+    
+    定义采集器执行状态管理相关配置，用于断点续传功能。
+    """
+    
+    enable_time_persistence: bool = Field(
+        default=True, 
+        description="是否启用时间持久化功能"
+    )
+    cleanup_old_states: bool = Field(
+        default=True, 
+        description="是否自动清理过期状态记录"
+    )
+    state_retention_days: int = Field(
+        default=30, 
+        ge=1, 
+        le=365,
+        description="状态记录保留天数"
+    )
+
+
 class StorageConfig(BaseModel):
     """存储配置模型
 
@@ -39,6 +61,12 @@ class StorageConfig(BaseModel):
     batch_size: int = Field(default=100, ge=1, description="批量处理大小")
     enable_wal: bool = Field(
         default=True, description="是否启用 WAL 模式（提升并发性能）"
+    )
+    
+    # 状态管理配置
+    state_management: StateManagementConfig = Field(
+        default_factory=StateManagementConfig,
+        description="采集器状态管理配置"
     )
 
 

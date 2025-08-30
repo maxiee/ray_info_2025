@@ -10,12 +10,89 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import threading
 
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, create_engine
+from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Float, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # SQLAlchemy 基类
 Base = declarative_base()
+
+
+class CollectorExecutionState(Base):
+    """采集器执行状态表
+    
+    用于存储每个采集器实例的最后执行时间，实现断点续传功能。
+    支持普通采集器和参数化采集器两种模式。
+    
+    字段说明：
+    - collector_name: 采集器名称（如 weibo.home）
+    - param_key: 参数键，用于区分参数化采集器的不同实例
+    - last_execution_time: 最后执行时间戳（Unix时间戳）
+    - created_at: 创建时间
+    - updated_at: 更新时间
+    - execution_count: 执行次数统计
+    """
+    
+    __tablename__ = "collector_execution_state"
+    
+    # 复合主键：采集器名称 + 参数键
+    collector_name = Column(
+        String, 
+        primary_key=True, 
+        comment="采集器名称，如 weibo.home"
+    )
+    param_key = Column(
+        String, 
+        primary_key=True, 
+        nullable=False,  # 不允许NULL，普通采集器使用空字符串
+        default="",  # 默认为空字符串
+        comment="参数键，普通采集器为空字符串"
+    )
+    
+    # 时间戳字段
+    last_execution_time = Column(
+        Float, 
+        nullable=False, 
+        index=True, 
+        comment="最后执行时间戳（Unix时间戳）"
+    )
+    created_at = Column(
+        Float, 
+        nullable=False, 
+        comment="创建时间戳"
+    )
+    updated_at = Column(
+        Float, 
+        nullable=False, 
+        comment="更新时间戳"
+    )
+    
+    # 统计字段
+    execution_count = Column(
+        Integer, 
+        nullable=False, 
+        default=0, 
+        comment="执行次数统计"
+    )
+    
+    def __repr__(self) -> str:
+        return (
+            f"<CollectorExecutionState("
+            f"collector_name={self.collector_name}, "
+            f"param_key={self.param_key}, "
+            f"execution_count={self.execution_count})>"
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "collector_name": self.collector_name,
+            "param_key": self.param_key,
+            "last_execution_time": self.last_execution_time,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "execution_count": self.execution_count,
+        }
 
 
 class RawInfoItem(Base):
@@ -143,6 +220,20 @@ class DatabaseManager:
     def create_tables(self):
         """创建所有表结构"""
         Base.metadata.create_all(self.engine)
+        
+        # 为collector_execution_state表创建索引以优化查询性能
+        try:
+            from sqlalchemy import text
+            with self.engine.connect() as conn:
+                # 检查索引是否存在，避免重复创建
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_collector_execution_time "
+                    "ON collector_execution_state(collector_name, last_execution_time)"
+                ))
+                conn.commit()
+        except Exception as e:
+            # 如果索引已存在或创建失败，记录但不中断
+            pass
 
     def drop_tables(self):
         """删除所有表结构（慎用）"""
