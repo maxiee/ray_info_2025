@@ -8,5 +8,8 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!-- 允许应用作为网络客户端发起出站连接（Dio 必需） -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 </dict>
 </plist>
