@@ -120,7 +120,10 @@ class CollectorStateManager:
             session.close()
 
     def update_execution_time(
-        self, collector_name: str, param_key: Optional[str] = None, timestamp: Optional[float] = None
+        self,
+        collector_name: str,
+        param_key: Optional[str] = None,
+        timestamp: Optional[float] = None,
     ) -> None:
         """更新采集器执行时间
 
@@ -192,7 +195,10 @@ class CollectorStateManager:
             session.close()
 
     def should_run_immediately(
-        self, collector_name: str, param_key: Optional[str] = None, interval_seconds: int = 300
+        self,
+        collector_name: str,
+        param_key: Optional[str] = None,
+        interval_seconds: int = 300,
     ) -> bool:
         """判断是否应该立即执行采集器
 
@@ -248,7 +254,10 @@ class CollectorStateManager:
             return False
 
     def calculate_next_run_time(
-        self, collector_name: str, param_key: Optional[str] = None, interval_seconds: int = 300
+        self,
+        collector_name: str,
+        param_key: Optional[str] = None,
+        interval_seconds: int = 300,
     ) -> float:
         """计算下次运行时间
 
