@@ -42,8 +42,23 @@ class MesCollector(ParameterizedCollector):
     def default_interval_seconds(self) -> int | None:
         return 300
 
-    def _load_config_and_build_maps(self):
-        """加载配置并构建引擎和时间范围映射。"""
+    def list_param_jobs(self) -> list[tuple[str, int]]:
+        """供调度器调用：返回 (query, interval_seconds).
+
+        调度器将为每个 query 创建独立 job，并在运行时传入 param=query。
+        """
+        return [(q, interval) for q, interval, _engine, _time_range in self._query_jobs]
+
+    async def setup(self) -> None:
+        """初始化采集器：加载配置并构建引擎和时间范围映射。
+
+        在这里一次性完成：
+        1. 从设置中加载查询任务配置
+        2. 构建 engine_map 和 time_range_map 映射
+
+        这样在后续的 fetch 方法中可以直接使用预构建的映射，
+        避免每次执行时重复计算，提高性能和代码清晰度。
+        """
         settings = get_settings()
         # 新结构：settings.search_engine 是列表 (query, interval_seconds, engine, time_range)
         if settings.search_engine:
@@ -65,25 +80,6 @@ class MesCollector(ParameterizedCollector):
             # 这与原先 dict comprehension 的行为一致。
             self._engine_map[q] = eng
             self._time_range_map[q] = tr
-
-    def list_param_jobs(self) -> list[tuple[str, int]]:
-        """供调度器调用：返回 (query, interval_seconds).
-
-        调度器将为每个 query 创建独立 job，并在运行时传入 param=query。
-        """
-        return [(q, interval) for q, interval, _engine, _time_range in self._query_jobs]
-
-    async def setup(self) -> None:
-        """初始化采集器：加载配置并构建引擎和时间范围映射。
-
-        在这里一次性完成：
-        1. 从设置中加载查询任务配置
-        2. 构建 engine_map 和 time_range_map 映射
-
-        这样在后续的 fetch 方法中可以直接使用预构建的映射，
-        避免每次执行时重复计算，提高性能和代码清晰度。
-        """
-        self._load_config_and_build_maps()
 
     def _choose_engine(self, query: str) -> str:
         """预留搜索引擎选择策略.
