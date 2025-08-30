@@ -38,6 +38,9 @@ class MesCollector(ParameterizedCollector):
         self._engine_map: dict[str, str] = {}
         self._time_range_map: dict[str, Optional[str]] = {}
 
+        # 直接在构造函数中加载配置
+        self._load_config()
+
     @property
     def default_interval_seconds(self) -> int | None:
         return 300
@@ -49,15 +52,10 @@ class MesCollector(ParameterizedCollector):
         """
         return [(q, interval) for q, interval, _engine, _time_range in self._query_jobs]
 
-    async def setup(self) -> None:
-        """初始化采集器：加载配置并构建引擎和时间范围映射。
+    def _load_config(self) -> None:
+        """加载配置并构建引擎和时间范围映射。
 
-        在这里一次性完成：
-        1. 从设置中加载查询任务配置
-        2. 构建 engine_map 和 time_range_map 映射
-
-        这样在后续的 fetch 方法中可以直接使用预构建的映射，
-        避免每次执行时重复计算，提高性能和代码清晰度。
+        在构造函数中调用，确保在调度器需要参数任务列表时配置已经加载完成。
         """
         settings = get_settings()
         # 新结构：settings.search_engine 是列表 (query, interval_seconds, engine, time_range)
@@ -80,6 +78,14 @@ class MesCollector(ParameterizedCollector):
             # 这与原先 dict comprehension 的行为一致。
             self._engine_map[q] = eng
             self._time_range_map[q] = tr
+
+    async def setup(self) -> None:
+        """初始化采集器。
+
+        配置已经在构造函数中加载，这里可以做一些其他初始化操作。
+        """
+        # 配置已在构造函数中加载，这里无需额外操作
+        pass
 
     def _choose_engine(self, query: str) -> str:
         """预留搜索引擎选择策略.

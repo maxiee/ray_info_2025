@@ -62,7 +62,9 @@ class SchedulerAdapter:
         )
 
         # 初始化状态管理器（用于断点续传）
-        self.state_manager = CollectorStateManager.get_instance(settings.storage.db_path)
+        self.state_manager = CollectorStateManager.get_instance(
+            settings.storage.db_path
+        )
 
         # 初始化策略模式组件
         self.strategy_registry = create_default_strategy_registry()
@@ -108,7 +110,9 @@ class SchedulerAdapter:
         if events:
             self.pipeline.run(events)
 
-    async def run_collector_with_state_update(self, collector: BaseCollector, param: str = None):
+    async def run_collector_with_state_update(
+        self, collector: BaseCollector, param: str = None
+    ):
         """执行单次数据收集任务并更新状态。
 
         调用指定收集器抓取数据，将获取的所有事件聚合成列表后
@@ -119,15 +123,14 @@ class SchedulerAdapter:
             param (str, optional): 参数化采集器的参数
         """
         start_time = time.time()
-        
+
         try:
             logger.info(
-                "[run] 开始执行采集器 collector=%s param=%s", 
-                collector.name, param
+                "[run] 开始执行采集器 collector=%s param=%s", collector.name, param
             )
-            
+
             events = []
-            
+
             # 执行采集任务
             if param is not None:
                 # 参数化采集器
@@ -135,27 +138,32 @@ class SchedulerAdapter:
             else:
                 # 普通采集器
                 agen = collector.fetch()
-                
+
             async for ev in agen:  # type: ignore
                 events.append(ev)
-            
+
             # 处理采集到的数据
             if events:
                 self.pipeline.run(events)
                 logger.info(
                     "[run] 采集完成 collector=%s param=%s events=%d",
-                    collector.name, param, len(events)
+                    collector.name,
+                    param,
+                    len(events),
                 )
             else:
                 logger.info(
                     "[run] 采集完成但无数据 collector=%s param=%s",
-                    collector.name, param
+                    collector.name,
+                    param,
                 )
-            
+
         except Exception as e:
             logger.error(
                 "[run] 采集器执行失败 collector=%s param=%s error=%s",
-                collector.name, param, e
+                collector.name,
+                param,
+                e,
             )
             raise
         finally:
@@ -164,12 +172,14 @@ class SchedulerAdapter:
                 self.state_manager.update_execution_time(
                     collector_name=collector.name,
                     param_key=param,  # 直接传递，状态管理器会处理None
-                    timestamp=start_time
+                    timestamp=start_time,
                 )
             except Exception as e:
                 logger.warning(
                     "更新采集器状态失败 collector=%s param=%s error=%s",
-                    collector.name, param, e
+                    collector.name,
+                    param,
+                    e,
                 )
 
     def add_collector_job_with_state(self, collector: BaseCollector) -> list[str]:
@@ -178,7 +188,7 @@ class SchedulerAdapter:
         集成断点续传功能，根据上次执行时间智能决定初始调度策略：
         - 如果首次运行或超过1个间隔时间，立即执行一次
         - 否则根据剩余时间延迟执行
-        
+
         然后添加正常的周期性调度任务。
 
         Args:
@@ -188,42 +198,45 @@ class SchedulerAdapter:
             list[str]: 已添加的任务ID列表
         """
         job_ids = []
-        
+
         try:
             if isinstance(collector, ParameterizedCollector):
                 # 参数化采集器：为每个参数创建独立的状态感知调度
-                for query_item in collector.queries:
-                    param_key = query_item.query
-                    interval = query_item.interval_seconds
-                    
+                param_jobs = collector.list_param_jobs()
+                for param_key, interval in param_jobs:
+
                     # 计算初始执行时间
                     next_run_time = self.state_manager.calculate_next_run_time(
                         collector_name=collector.name,
                         param_key=param_key,
-                        interval_seconds=interval
+                        interval_seconds=interval,
                     )
-                    
+
                     # 添加初始执行任务（一次性）
                     if self.state_manager.should_run_immediately(
                         collector_name=collector.name,
                         param_key=param_key,
-                        interval_seconds=interval
+                        interval_seconds=interval,
                     ):
                         initial_job_id = f"{collector.name}:{param_key}:initial"
                         self.scheduler.add_job(
                             self.run_collector_with_state_update,
-                            trigger=DateTrigger(run_date=datetime.fromtimestamp(next_run_time)),
+                            trigger=DateTrigger(
+                                run_date=datetime.fromtimestamp(next_run_time)
+                            ),
                             args=[collector, param_key],
                             id=initial_job_id,
                             replace_existing=True,
                         )
                         job_ids.append(initial_job_id)
-                        
+
                         logger.info(
                             "添加参数化采集器初始任务 collector=%s param=%s delay=%.1f",
-                            collector.name, param_key, next_run_time - time.time()
+                            collector.name,
+                            param_key,
+                            next_run_time - time.time(),
                         )
-                    
+
                     # 添加周期性任务
                     periodic_job_id = f"{collector.name}:{param_key}:periodic"
                     self.scheduler.add_job(
@@ -234,43 +247,48 @@ class SchedulerAdapter:
                         replace_existing=True,
                     )
                     job_ids.append(periodic_job_id)
-                    
+
                     logger.info(
                         "添加参数化采集器周期任务 collector=%s param=%s interval=%d",
-                        collector.name, param_key, interval
+                        collector.name,
+                        param_key,
+                        interval,
                     )
             else:
                 # 普通采集器
                 interval = collector.default_interval_seconds
-                
+
                 # 计算初始执行时间
                 next_run_time = self.state_manager.calculate_next_run_time(
                     collector_name=collector.name,
                     param_key=None,
-                    interval_seconds=interval
+                    interval_seconds=interval,
                 )
-                
+
                 # 添加初始执行任务（一次性）
                 if self.state_manager.should_run_immediately(
                     collector_name=collector.name,
                     param_key=None,
-                    interval_seconds=interval
+                    interval_seconds=interval,
                 ):
                     initial_job_id = f"{collector.name}:initial"
                     self.scheduler.add_job(
                         self.run_collector_with_state_update,
-                        trigger=DateTrigger(run_date=datetime.fromtimestamp(next_run_time)),
+                        trigger=DateTrigger(
+                            run_date=datetime.fromtimestamp(next_run_time)
+                        ),
                         args=[collector],
                         id=initial_job_id,
                         replace_existing=True,
                     )
                     job_ids.append(initial_job_id)
-                    
+
                     logger.info(
                         "添加普通采集器初始任务 collector=%s delay=%.1f",
-                        collector.name, next_run_time - time.time()
+                        collector.name,
+                        next_run_time - time.time(),
                     )
-                
+
                 # 添加周期性任务
                 periodic_job_id = f"{collector.name}:periodic"
                 self.scheduler.add_job(
@@ -281,23 +299,24 @@ class SchedulerAdapter:
                     replace_existing=True,
                 )
                 job_ids.append(periodic_job_id)
-                
+
                 logger.info(
                     "添加普通采集器周期任务 collector=%s interval=%d",
-                    collector.name, interval
+                    collector.name,
+                    interval,
                 )
-            
+
             logger.info(
                 "状态感知调度完成 collector=%s 添加任务数=%d",
-                collector.name, len(job_ids)
+                collector.name,
+                len(job_ids),
             )
-            
+
             return job_ids
-            
+
         except Exception as e:
             logger.error(
-                "添加状态感知采集器任务失败 collector=%s error=%s",
-                collector.name, e
+                "添加状态感知采集器任务失败 collector=%s error=%s", collector.name, e
             )
             return []
 
@@ -349,7 +368,9 @@ class SchedulerAdapter:
                     instance.param,
                     instance_id,
                 )
-                await self.run_collector_with_state_update(instance.collector, instance.param)
+                await self.run_collector_with_state_update(
+                    instance.collector, instance.param
+                )
 
             return {
                 "status": "success",
@@ -363,7 +384,7 @@ class SchedulerAdapter:
                 "status": "error",
                 "message": f"Failed to trigger instance {instance_id}: {str(e)}",
             }
-    
+
     def load_all_collectors(self):
         """加载并添加所有已注册的收集器任务。
 
