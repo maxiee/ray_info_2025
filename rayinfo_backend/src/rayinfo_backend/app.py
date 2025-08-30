@@ -16,11 +16,13 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .utils.logging import setup_logging
 from .scheduling.scheduler import SchedulerAdapter
 from .collectors import discover_and_register  # 新增: 自动发现 collectors
 from .utils.instance_id import instance_manager
+from .api.v1 import router as api_v1_router
 
 logger = setup_logging()
 
@@ -50,7 +52,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
             logger.info("Scheduler stopped.")
 
 
-app = FastAPI(title="RayInfo Backend", lifespan=lifespan)
+app = FastAPI(
+    title="RayInfo Backend",
+    description="RayInfo 跨平台资讯聚合器 API",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# 添加 CORS 支持
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 在生产环境中应该限制为具体域名
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 注册 API 路由
+app.include_router(api_v1_router)
 
 
 @app.get("/", summary="健康检查 / Hello")

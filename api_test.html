@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RayInfo API 测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1e3a8a;
+            text-align: center;
+        }
+        .api-test {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+        }
+        button {
+            background: #1e3a8a;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1e40af;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8fafc;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success { border-left: 4px solid #10b981; }
+        .error { border-left: 4px solid #ef4444; }
+        .article-card {
+            margin: 10px 0;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: #fafafa;
+        }
+        .article-title {
+            font-weight: bold;
+            color: #1e3a8a;
+            margin-bottom: 5px;
+        }
+        .article-meta {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+        .article-description {
+            color: #374151;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RayInfo API 测试工具</h1>
+        
+        <div class="api-test">
+            <h3>1. 获取资讯列表</h3>
+            <button onclick="testGetArticles()">测试 GET /api/v1/articles</button>
+            <div id="articles-result" class="result"></div>
+            <div id="articles-display"></div>
+        </div>
+        
+        <div class="api-test">
+            <h3>2. 获取来源统计</h3>
+            <button onclick="testGetSources()">测试 GET /api/v1/sources</button>
+            <div id="sources-result" class="result"></div>
+        </div>
+        
+        <div class="api-test">
+            <h3>3. 搜索资讯</h3>
+            <input type="text" id="search-query" placeholder="输入搜索关键词" value="信息差">
+            <button onclick="testSearchArticles()">测试 GET /api/v1/search</button>
+            <div id="search-result" class="result"></div>
+        </div>
+        
+        <div class="api-test">
+            <h3>4. 健康检查</h3>
+            <button onclick="testHealth()">测试 GET /api/v1/health</button>
+            <div id="health-result" class="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1';
+        
+        async function makeRequest(url, resultElementId) {
+            const resultElement = document.getElementById(resultElementId);
+            resultElement.textContent = '正在请求...';
+            resultElement.className = 'result';
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultElement.textContent = JSON.stringify(data, null, 2);
+                    resultElement.className = 'result success';
+                    return data;
+                } else {
+                    resultElement.textContent = `错误 ${response.status}: ${JSON.stringify(data, null, 2)}`;
+                    resultElement.className = 'result error';
+                }
+            } catch (error) {
+                resultElement.textContent = `网络错误: ${error.message}`;
+                resultElement.className = 'result error';
+            }
+            return null;
+        }
+        
+        async function testGetArticles() {
+            const data = await makeRequest(`${API_BASE}/articles?page=1&limit=5`, 'articles-result');
+            
+            if (data && data.data) {
+                const displayElement = document.getElementById('articles-display');
+                displayElement.innerHTML = '<h4>资讯列表预览:</h4>';
+                
+                data.data.slice(0, 3).forEach(article => {
+                    const articleDiv = document.createElement('div');
+                    articleDiv.className = 'article-card';
+                    articleDiv.innerHTML = `
+                        <div class="article-title">${article.title || '无标题'}</div>
+                        <div class="article-meta">来源: ${article.source} | 时间: ${new Date(article.collected_at).toLocaleString()}</div>
+                        <div class="article-description">${(article.description || '无描述').substring(0, 100)}...</div>
+                    `;
+                    displayElement.appendChild(articleDiv);
+                });
+            }
+        }
+        
+        async function testGetSources() {
+            await makeRequest(`${API_BASE}/sources`, 'sources-result');
+        }
+        
+        async function testSearchArticles() {
+            const query = document.getElementById('search-query').value;
+            if (!query.trim()) {
+                alert('请输入搜索关键词');
+                return;
+            }
+            await makeRequest(`${API_BASE}/search?q=${encodeURIComponent(query)}&page=1&limit=5`, 'search-result');
+        }
+        
+        async function testHealth() {
+            await makeRequest(`${API_BASE}/health`, 'health-result');
+        }
+        
+        // 页面加载时自动测试健康检查
+        window.onload = () => {
+            testHealth();
+        };
+    </script>
+</body>
+</html>
