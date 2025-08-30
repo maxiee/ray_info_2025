@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta
+from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -68,7 +69,12 @@ class SchedulerAdapter:
 
         # 初始化策略模式组件
         self.strategy_registry = create_default_strategy_registry()
-        self.simple_job_factory = SimpleJobFactory(self.run_collector_with_state_update)
+
+        # 为普通采集器创建适配器函数（只接受collector参数）
+        async def simple_collector_runner(collector: BaseCollector) -> None:
+            await self.run_collector_with_state_update(collector, None)
+
+        self.simple_job_factory = SimpleJobFactory(simple_collector_runner)
 
         # 为参数化任务工厂创建适配器函数
         def pipeline_runner(events: list) -> None:
@@ -111,7 +117,7 @@ class SchedulerAdapter:
             self.pipeline.run(events)
 
     async def run_collector_with_state_update(
-        self, collector: BaseCollector, param: str = None
+        self, collector: BaseCollector, param: Optional[str] = None
     ):
         """执行单次数据收集任务并更新状态。
 
@@ -204,6 +210,14 @@ class SchedulerAdapter:
                 # 参数化采集器：为每个参数创建独立的状态感知调度
                 param_jobs = collector.list_param_jobs()
                 for param_key, interval in param_jobs:
+                    # 确保 interval 不为 None
+                    if interval is None:
+                        logger.warning(
+                            "参数化采集器任务间隔为空，跳过 collector=%s param=%s",
+                            collector.name,
+                            param_key,
+                        )
+                        continue
 
                     # 计算初始执行时间
                     next_run_time = self.state_manager.calculate_next_run_time(
@@ -257,6 +271,12 @@ class SchedulerAdapter:
             else:
                 # 普通采集器
                 interval = collector.default_interval_seconds
+                if interval is None:
+                    logger.warning(
+                        "普通采集器间隔为空，使用默认值60秒 collector=%s",
+                        collector.name,
+                    )
+                    interval = 60
 
                 # 计算初始执行时间
                 next_run_time = self.state_manager.calculate_next_run_time(
