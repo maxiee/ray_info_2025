@@ -1,13 +1,28 @@
-"""调度策略模块
+"""调度策略模块（已标注为弃用）
 
-实现任务调度的策略模式，将复杂的调度逻辑从 SchedulerAdapter 中分离出来。
-通过策略模式简化 add_collector_job 方法，提升代码可读性和可测试性。
+注意：本模块将逐步弃用，推荐直接使用 ``SchedulerAdapter`` 的状态感知接口：
+
+- 单个采集器：``SchedulerAdapter.add_collector_job_with_state(collector)``
+- 全部采集器：``SchedulerAdapter.load_all_collectors()``
+
+弃用原因：历史上为解耦复杂分支逻辑引入了策略模式，但随着 ``CollectorStateManager``
+与状态感知调度的引入，核心调度逻辑已聚合在 ``SchedulerAdapter`` 内，策略层带来的
+额外抽象收益变小、心智成本变高。
+
+迁移建议：
+1) 停止直接使用 ``StrategyRegistry/JobFactory/*Strategy`` 等类型；
+2) 在需要添加任务处，改为通过 ``SchedulerAdapter`` 添加；
+3) 对参数化采集器，按既有接口 ``list_param_jobs()`` 返回 (param, interval) 即可，
+    其余由适配器负责。
+
+本模块在未来一个小版本内保留以兼容现有引用；导入或实例化时会发出 DeprecationWarning。
 """
 
 from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+import warnings
 from typing import Dict, Type, Callable, Any
 
 from apscheduler.triggers.interval import IntervalTrigger
@@ -18,10 +33,24 @@ from ..utils.instance_id import instance_manager
 logger = logging.getLogger("rayinfo.scheduler.strategy")
 
 
+def _deprecated_notice():
+    # DeprecationWarning 默认在运行时被忽略，不会干扰生产日志；开发/测试开启 warnings 时可见。
+    warnings.warn(
+        "rayinfo_backend.scheduling.strategies 已标注为弃用，建议改用 SchedulerAdapter 的状态感知接口",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
+
+_deprecated_notice()
+
+
 class JobFactory(ABC):
-    """任务工厂抽象基类
+    """[Deprecated] 任务工厂抽象基类
 
     负责为不同类型的采集器创建合适的任务函数。
+
+    已弃用：请使用 SchedulerAdapter.add_collector_job_with_state() 直接注册任务。
     """
 
     @abstractmethod
@@ -41,7 +70,7 @@ class JobFactory(ABC):
 
 
 class SimpleJobFactory(JobFactory):
-    """普通采集器任务工厂"""
+    """[Deprecated] 普通采集器任务工厂"""
 
     def __init__(self, run_collector_func: Callable[[BaseCollector], Any]):
         """初始化普通任务工厂
@@ -64,7 +93,7 @@ class SimpleJobFactory(JobFactory):
 
 
 class ParameterizedJobFactory(JobFactory):
-    """参数化采集器任务工厂"""
+    """[Deprecated] 参数化采集器任务工厂"""
 
     def __init__(self, pipeline_run_func: Callable[[list], None]):
         """初始化参数化任务工厂
@@ -96,10 +125,12 @@ class ParameterizedJobFactory(JobFactory):
 
 
 class JobScheduleStrategy(ABC):
-    """任务调度策略抽象基类
+    """[Deprecated] 任务调度策略抽象基类
 
     定义了为采集器添加调度任务的统一接口。
     不同类型的采集器使用不同的策略实现。
+
+    已弃用：请改用 SchedulerAdapter 的状态感知调度。
     """
 
     @abstractmethod
@@ -123,7 +154,7 @@ class JobScheduleStrategy(ABC):
 
 
 class SimpleJobStrategy(JobScheduleStrategy):
-    """普通采集器调度策略
+    """[Deprecated] 普通采集器调度策略
 
     为普通采集器创建单个调度任务。
     """
@@ -133,6 +164,7 @@ class SimpleJobStrategy(JobScheduleStrategy):
     ) -> list[str]:
         """为普通采集器创建调度任务"""
         interval = collector.default_interval_seconds or 60
+        # 向后兼容：简单策略保持 job_id=collector.name
         job_id = collector.name
 
         # 注册实例ID（普通采集器param为None）
@@ -162,7 +194,7 @@ class SimpleJobStrategy(JobScheduleStrategy):
 
 
 class ParameterizedJobStrategy(JobScheduleStrategy):
-    """参数化采集器调度策略
+    """[Deprecated] 参数化采集器调度策略
 
     为参数化采集器的每个参数创建独立的调度任务。
     """
@@ -189,6 +221,7 @@ class ParameterizedJobStrategy(JobScheduleStrategy):
         job_ids = []
         for param, interval in param_jobs:
             interval = interval or (collector.default_interval_seconds or 60)
+            # 向后兼容：参数化策略保持 job_id="<collector>:<param>"
             job_id = f"{collector.name}:{param}"
 
             # 注册实例ID
@@ -221,14 +254,17 @@ class ParameterizedJobStrategy(JobScheduleStrategy):
 
 
 class StrategyRegistry:
-    """策略注册器
+    """[Deprecated] 策略注册器
 
     管理不同采集器类型对应的调度策略。
+
+    已弃用：请改为通过 SchedulerAdapter 直接注册采集器任务。
     """
 
     def __init__(self):
         self._strategies: Dict[Type[BaseCollector], JobScheduleStrategy] = {}
         self._default_strategy: JobScheduleStrategy | None = None
+        _deprecated_notice()
 
     def register_strategy(
         self, collector_type: Type[BaseCollector], strategy: JobScheduleStrategy
@@ -272,10 +308,9 @@ class StrategyRegistry:
 
 
 def create_default_strategy_registry() -> StrategyRegistry:
-    """创建默认的策略注册器
+    """[Deprecated] 创建默认的策略注册器
 
-    Returns:
-        配置好的策略注册器实例
+    返回一个带有默认映射的注册器实例。推荐迁移至 SchedulerAdapter。
     """
     registry = StrategyRegistry()
 

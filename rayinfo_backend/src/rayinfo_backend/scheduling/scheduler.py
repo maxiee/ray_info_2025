@@ -2,50 +2,46 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.executors.asyncio import AsyncIOExecutor
-from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from ..collectors.base import (
-    registry,
     BaseCollector,
     ParameterizedCollector,
     QuotaExceededException,
+    registry,
 )
-from ..pipelines import Pipeline, DedupStage, SqlitePersistStage
 from ..config.settings import get_settings
+from ..pipelines import DedupStage, Pipeline, SqlitePersistStage
 from ..utils.instance_id import instance_manager
 from .state_manager import CollectorStateManager
+from .types import JobKind, make_job_id
 from .strategies import (
+    StrategyRegistry,
     create_default_strategy_registry,
     SimpleJobFactory,
     ParameterizedJobFactory,
-    StrategyRegistry,
 )
 
 logger = logging.getLogger("rayinfo.scheduler")
 
 
 class SchedulerAdapter:
-    """调度器适配器，负责管理和调度所有数据收集任务。
+    """调度器适配器，负责管理与调度所有采集任务。
 
-    这个类封装了 APScheduler 异步调度器，使用策略模式提供对数据收集器(Collector)的
-    统一调度管理。支持普通收集器和参数化收集器两种模式：
-    - 普通收集器：按固定间隔执行单个收集任务
-    - 参数化收集器：支持多个参数配置，每个参数对应一个独立的调度任务
-
-    收集到的数据会通过数据处理管道进行去重和持久化处理。
-    使用策略模式重构后，简化了原本复杂的条件分支逻辑，提升了代码可读性和可扩展性。
+    - 封装 APScheduler（异步）
+    - 统一支持普通与参数化采集器
+    - 通过 `CollectorStateManager` 支持断点续传与智能初次/补偿执行
+    - 采集结果经 `Pipeline` 去重与持久化
 
     Attributes:
-        scheduler (AsyncIOScheduler): APScheduler 异步调度器，负责定时触发任务
-        pipeline (Pipeline): 数据处理管道，包含去重和持久化阶段
-        strategy_registry (StrategyRegistry): 策略注册器，管理不同采集器类型的调度策略
-        simple_job_factory (SimpleJobFactory): 普通采集器任务工厂
-        param_job_factory (ParameterizedJobFactory): 参数化采集器任务工厂
+        scheduler: APScheduler 异步调度器实例
+        pipeline: 数据处理管道（去重 + SQLite 持久化）
+        state_manager: 采集器状态管理（最后执行时间、次数等）
     """
 
     def __init__(self):
@@ -74,20 +70,18 @@ class SchedulerAdapter:
             settings.storage.db_path
         )
 
-        # 初始化策略模式组件
-        self.strategy_registry = create_default_strategy_registry()
+        # 向后兼容的策略注册器与任务工厂（当前核心流程未直接依赖，但保留对外属性）
+        self.strategy_registry: StrategyRegistry = create_default_strategy_registry()
 
-        # 为普通采集器创建适配器函数（只接受collector参数）
-        async def simple_collector_runner(collector: BaseCollector) -> None:
+        async def _simple_runner(collector: BaseCollector) -> None:
             await self.run_collector_with_state_update(collector, None)
 
-        self.simple_job_factory = SimpleJobFactory(simple_collector_runner)
+        self.simple_job_factory = SimpleJobFactory(_simple_runner)
 
-        # 为参数化任务工厂创建适配器函数
-        def pipeline_runner(events: list) -> None:
+        def _pipeline_runner(events: list) -> None:
             self.pipeline.run(events)
 
-        self.param_job_factory = ParameterizedJobFactory(pipeline_runner)
+        self.param_job_factory = ParameterizedJobFactory(_pipeline_runner)
 
         logger.info(f"调度器初始化完成，数据库路径: {settings.storage.db_path}")
 
@@ -105,7 +99,7 @@ class SchedulerAdapter:
         """
         self.scheduler.shutdown(wait=False)
 
-    async def run_collector_once(self, collector: BaseCollector):
+    async def run_collector_once(self, collector: BaseCollector) -> None:
         """执行单次数据收集任务。
 
         调用指定收集器抓取数据，将获取的所有事件聚合成列表后
@@ -125,7 +119,7 @@ class SchedulerAdapter:
 
     async def run_collector_with_state_update(
         self, collector: BaseCollector, param: Optional[str] = None
-    ):
+    ) -> None:
         """执行单次数据收集任务并更新状态。
 
         调用指定收集器抓取数据，将获取的所有事件聚合成列表后
@@ -193,7 +187,9 @@ class SchedulerAdapter:
 
             # 创建延迟重试任务
             retry_time = time.time() + retry_delay
-            retry_job_id = f"{collector.name}:{param}:quota_retry:{int(time.time())}"
+            retry_job_id = make_job_id(
+                collector.name, param, JobKind.QuotaRetry, suffix=str(int(time.time()))
+            )
 
             self.scheduler.add_job(
                 self.run_collector_with_state_update,
@@ -300,7 +296,9 @@ class SchedulerAdapter:
                         param_key=param_key,
                         interval_seconds=interval,
                     ):
-                        initial_job_id = f"{collector.name}:{param_key}:initial"
+                        initial_job_id = make_job_id(
+                            collector.name, param_key, JobKind.Initial
+                        )
                         self.scheduler.add_job(
                             self.run_collector_with_state_update,
                             trigger=DateTrigger(
@@ -322,7 +320,9 @@ class SchedulerAdapter:
                         )
 
                     # 添加周期性任务
-                    periodic_job_id = f"{collector.name}:{param_key}:periodic"
+                    periodic_job_id = make_job_id(
+                        collector.name, param_key, JobKind.Periodic
+                    )
                     self.scheduler.add_job(
                         self.run_collector_with_state_update,
                         trigger=IntervalTrigger(seconds=interval),
@@ -371,7 +371,7 @@ class SchedulerAdapter:
                     param_key=None,
                     interval_seconds=interval,
                 ):
-                    initial_job_id = f"{collector.name}:initial"
+                    initial_job_id = make_job_id(collector.name, None, JobKind.Initial)
                     self.scheduler.add_job(
                         self.run_collector_with_state_update,
                         trigger=DateTrigger(
@@ -392,7 +392,7 @@ class SchedulerAdapter:
                     )
 
                 # 添加周期性任务
-                periodic_job_id = f"{collector.name}:periodic"
+                periodic_job_id = make_job_id(collector.name, None, JobKind.Periodic)
                 self.scheduler.add_job(
                     self.run_collector_with_state_update,
                     trigger=IntervalTrigger(seconds=interval),
