@@ -5,7 +5,6 @@ import '../bloc/articles/articles_event.dart';
 import '../bloc/articles/articles_state.dart';
 import '../bloc/read_status/read_status_bloc.dart';
 import '../bloc/read_status/read_status_state.dart';
-import '../bloc/sources/sources_bloc.dart';
 import '../widgets/article_card.dart';
 import '../widgets/source_sidebar.dart';
 import '../../data/models/read_status_models.dart';
@@ -56,28 +55,6 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('RayInfo'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              Navigator.pushNamed(context, '/search');
-            },
-          ),
-          // 在小屏幕上显示侧边栏切换按钮
-          if (MediaQuery.of(context).size.width < 768)
-            IconButton(
-              icon: Icon(_isSidebarCollapsed ? Icons.menu : Icons.menu_open),
-              onPressed: () {
-                setState(() {
-                  _isSidebarCollapsed = !_isSidebarCollapsed;
-                });
-              },
-              tooltip: _isSidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
-            ),
-        ],
-      ),
       body: BlocListener<ReadStatusBloc, ReadStatusState>(
         listener: (context, readStatusState) {
           // 监听已读状态变化，同步更新文章列表
@@ -116,6 +93,9 @@ class _HomePageState extends State<HomePage> {
             selectedReadStatus: _currentReadStatus,
             onSourceChanged: _onSourceChanged,
             onReadStatusChanged: _onReadStatusChanged,
+            onSearchPressed: () {
+              Navigator.pushNamed(context, '/search');
+            },
             isCollapsed: _isSidebarCollapsed && screenWidth < 1024,
             onToggleCollapse: isDesktop
                 ? null
@@ -128,20 +108,43 @@ class _HomePageState extends State<HomePage> {
 
         // 主内容区域
         Expanded(
-          child: BlocBuilder<ArticlesBloc, ArticlesState>(
-            builder: (context, state) {
-              return RefreshIndicator(
-                onRefresh: () async {
-                  context.read<ArticlesBloc>().add(
-                    RefreshArticles(
-                      readStatus: _currentReadStatus,
-                      source: _currentSource,
-                    ),
+          child: Stack(
+            children: [
+              BlocBuilder<ArticlesBloc, ArticlesState>(
+                builder: (context, state) {
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      context.read<ArticlesBloc>().add(
+                        RefreshArticles(
+                          readStatus: _currentReadStatus,
+                          source: _currentSource,
+                        ),
+                      );
+                    },
+                    child: _buildMainContent(state),
                   );
                 },
-                child: _buildMainContent(state),
-              );
-            },
+              ),
+
+              // 在小屏幕上显示侧边栏切换按钮（悬浮按钮）
+              if (screenWidth < 768)
+                Positioned(
+                  top: 16,
+                  left: 16,
+                  child: FloatingActionButton(
+                    mini: true,
+                    onPressed: () {
+                      setState(() {
+                        _isSidebarCollapsed = !_isSidebarCollapsed;
+                      });
+                    },
+                    tooltip: _isSidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
+                    child: Icon(
+                      _isSidebarCollapsed ? Icons.menu : Icons.menu_open,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ],

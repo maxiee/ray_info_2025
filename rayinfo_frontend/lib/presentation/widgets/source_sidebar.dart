@@ -14,6 +14,7 @@ import '../../data/models/read_status_models.dart';
 /// - 点击来源进行筛选
 /// - 显示所有/未读/已读状态切换
 /// - 响应式设计（小屏幕可折叠）
+/// - 搜索功能按钮
 class SourceSidebar extends StatefulWidget {
   final String? selectedSource;
   final ReadStatusFilter selectedReadStatus;
@@ -21,6 +22,7 @@ class SourceSidebar extends StatefulWidget {
   final Function(ReadStatusFilter) onReadStatusChanged;
   final bool isCollapsed;
   final VoidCallback? onToggleCollapse;
+  final VoidCallback? onSearchPressed;
 
   const SourceSidebar({
     super.key,
@@ -30,6 +32,7 @@ class SourceSidebar extends StatefulWidget {
     required this.onReadStatusChanged,
     this.isCollapsed = false,
     this.onToggleCollapse,
+    this.onSearchPressed,
   });
 
   @override
@@ -127,6 +130,21 @@ class _SourceSidebarState extends State<SourceSidebar> {
             ),
           ),
           const Spacer(),
+
+          // 搜索按钮
+          if (widget.onSearchPressed != null)
+            IconButton(
+              onPressed: widget.onSearchPressed,
+              icon: const Icon(Icons.search),
+              iconSize: 20,
+              tooltip: '搜索',
+              style: IconButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.1),
+                foregroundColor: theme.colorScheme.primary,
+              ),
+            ),
+
+          const SizedBox(width: 8),
 
           // 折叠按钮
           if (widget.onToggleCollapse != null)
