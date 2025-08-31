@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../bloc/articles/articles_bloc.dart';
 import '../bloc/articles/articles_event.dart';
 import '../bloc/articles/articles_state.dart';
+import '../bloc/read_status/read_status_bloc.dart';
+import '../bloc/read_status/read_status_state.dart';
 import '../widgets/article_card.dart';
 import '../widgets/article_filter_bar.dart';
 import '../../data/models/read_status_models.dart';
@@ -74,30 +76,50 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: BlocBuilder<ArticlesBloc, ArticlesState>(
-        builder: (context, state) {
-          return Column(
-            children: [
-              // 筛选器（按需显示）
-              if (_showFilters) _buildFilterSection(state),
-
-              // 主内容区域
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async {
-                    context.read<ArticlesBloc>().add(
-                      RefreshArticles(
-                        readStatus: _currentReadStatus,
-                        source: _currentSource,
-                      ),
-                    );
-                  },
-                  child: _buildBody(state),
-                ),
+      body: BlocListener<ReadStatusBloc, ReadStatusState>(
+        listener: (context, readStatusState) {
+          // 监听已读状态变化，同步更新文章列表
+          if (readStatusState is ReadStatusSuccess) {
+            context.read<ArticlesBloc>().updateArticleStatus(
+              readStatusState.postId,
+              readStatusState.isRead,
+              readStatusState.readAt,
+            );
+          } else if (readStatusState is BatchReadStatusSuccess) {
+            // 处理批量操作成功的情况，重新加载当前页面
+            context.read<ArticlesBloc>().add(
+              RefreshArticles(
+                readStatus: _currentReadStatus,
+                source: _currentSource,
               ),
-            ],
-          );
+            );
+          }
         },
+        child: BlocBuilder<ArticlesBloc, ArticlesState>(
+          builder: (context, state) {
+            return Column(
+              children: [
+                // 筛选器（按需显示）
+                if (_showFilters) _buildFilterSection(state),
+
+                // 主内容区域
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: () async {
+                      context.read<ArticlesBloc>().add(
+                        RefreshArticles(
+                          readStatus: _currentReadStatus,
+                          source: _currentSource,
+                        ),
+                      );
+                    },
+                    child: _buildBody(state),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
