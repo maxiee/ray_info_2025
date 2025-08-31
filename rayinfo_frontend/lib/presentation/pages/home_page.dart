@@ -5,8 +5,9 @@ import '../bloc/articles/articles_event.dart';
 import '../bloc/articles/articles_state.dart';
 import '../bloc/read_status/read_status_bloc.dart';
 import '../bloc/read_status/read_status_state.dart';
+import '../bloc/sources/sources_bloc.dart';
 import '../widgets/article_card.dart';
-import '../widgets/article_filter_bar.dart';
+import '../widgets/source_sidebar.dart';
 import '../../data/models/read_status_models.dart';
 
 /// 首页 - 资讯列表
@@ -23,7 +24,9 @@ class _HomePageState extends State<HomePage> {
   // 筛选状态
   ReadStatusFilter _currentReadStatus = ReadStatusFilter.unread;
   String? _currentSource;
-  bool _showFilters = false;
+
+  // 侧边栏状态
+  bool _isSidebarCollapsed = false;
 
   @override
   void initState() {
@@ -59,21 +62,20 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () {
-              // TODO: 导航到搜索页面
               Navigator.pushNamed(context, '/search');
             },
           ),
-          IconButton(
-            icon: Icon(
-              _showFilters ? Icons.filter_list : Icons.filter_list_outlined,
+          // 在小屏幕上显示侧边栏切换按钮
+          if (MediaQuery.of(context).size.width < 768)
+            IconButton(
+              icon: Icon(_isSidebarCollapsed ? Icons.menu : Icons.menu_open),
+              onPressed: () {
+                setState(() {
+                  _isSidebarCollapsed = !_isSidebarCollapsed;
+                });
+              },
+              tooltip: _isSidebarCollapsed ? '显示侧边栏' : '隐藏侧边栏',
             ),
-            onPressed: () {
-              setState(() {
-                _showFilters = !_showFilters;
-              });
-            },
-            tooltip: _showFilters ? '隐藏筛选器' : '显示筛选器',
-          ),
         ],
       ),
       body: BlocListener<ReadStatusBloc, ReadStatusState>(
@@ -95,36 +97,78 @@ class _HomePageState extends State<HomePage> {
             );
           }
         },
-        child: BlocBuilder<ArticlesBloc, ArticlesState>(
-          builder: (context, state) {
-            return Column(
-              children: [
-                // 筛选器（按需显示）
-                if (_showFilters) _buildFilterSection(state),
-
-                // 主内容区域
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () async {
-                      context.read<ArticlesBloc>().add(
-                        RefreshArticles(
-                          readStatus: _currentReadStatus,
-                          source: _currentSource,
-                        ),
-                      );
-                    },
-                    child: _buildBody(state),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
+        child: _buildResponsiveLayout(context),
       ),
     );
   }
 
-  Widget _buildBody(ArticlesState state) {
+  /// 构建响应式布局
+  Widget _buildResponsiveLayout(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth >= 768;
+
+    return Row(
+      children: [
+        // 左侧边栏
+        if (isDesktop || !_isSidebarCollapsed)
+          SourceSidebar(
+            selectedSource: _currentSource,
+            selectedReadStatus: _currentReadStatus,
+            onSourceChanged: _onSourceChanged,
+            onReadStatusChanged: _onReadStatusChanged,
+            isCollapsed: _isSidebarCollapsed && screenWidth < 1024,
+            onToggleCollapse: isDesktop
+                ? null
+                : () {
+                    setState(() {
+                      _isSidebarCollapsed = !_isSidebarCollapsed;
+                    });
+                  },
+          ),
+
+        // 主内容区域
+        Expanded(
+          child: BlocBuilder<ArticlesBloc, ArticlesState>(
+            builder: (context, state) {
+              return RefreshIndicator(
+                onRefresh: () async {
+                  context.read<ArticlesBloc>().add(
+                    RefreshArticles(
+                      readStatus: _currentReadStatus,
+                      source: _currentSource,
+                    ),
+                  );
+                },
+                child: _buildMainContent(state),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 处理来源变化
+  void _onSourceChanged(String? source) {
+    setState(() {
+      _currentSource = source;
+    });
+    context.read<ArticlesBloc>().add(
+      LoadArticles(page: 1, readStatus: _currentReadStatus, source: source),
+    );
+  }
+
+  /// 处理已读状态变化
+  void _onReadStatusChanged(ReadStatusFilter readStatus) {
+    setState(() {
+      _currentReadStatus = readStatus;
+    });
+    context.read<ArticlesBloc>().add(
+      LoadArticles(page: 1, readStatus: readStatus, source: _currentSource),
+    );
+  }
+
+  Widget _buildMainContent(ArticlesState state) {
     if (state is ArticlesLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -204,43 +248,6 @@ class _HomePageState extends State<HomePage> {
 
         final article = state.articles[index];
         return ArticleCard(article: article);
-      },
-    );
-  }
-
-  /// 构建筛选器区域
-  Widget _buildFilterSection(ArticlesState state) {
-    // 获取可用的来源列表（可以从状态或API获取）
-    final availableSources = <String>[
-      'mes.search',
-      'weibo.home',
-      // 可以根据实际数据动态生成
-    ];
-
-    return ArticleFilterBar(
-      selectedReadStatus: _currentReadStatus,
-      selectedSource: _currentSource,
-      availableSources: availableSources,
-      onReadStatusChanged: (readStatus) {
-        setState(() {
-          _currentReadStatus = readStatus;
-        });
-        context.read<ArticlesBloc>().filterByReadStatus(readStatus);
-      },
-      onSourceChanged: (source) {
-        setState(() {
-          _currentSource = source;
-        });
-        context.read<ArticlesBloc>().filterBySource(source);
-      },
-      onClearFilters: () {
-        setState(() {
-          _currentReadStatus = ReadStatusFilter.unread;
-          _currentSource = null;
-        });
-        context.read<ArticlesBloc>().add(
-          const LoadArticles(page: 1, readStatus: ReadStatusFilter.unread),
-        );
       },
     );
   }

@@ -7,9 +7,11 @@ import 'data/datasources/api_datasource.dart';
 import 'data/repositories/article_repository_impl.dart';
 import 'domain/usecases/get_articles.dart';
 import 'domain/usecases/search_articles.dart';
+import 'domain/usecases/get_sources.dart';
 import 'presentation/bloc/articles/articles_bloc.dart';
 import 'presentation/bloc/search/search_bloc.dart';
 import 'presentation/bloc/read_status/read_status_bloc.dart';
+import 'presentation/bloc/sources/sources_bloc.dart';
 import 'presentation/pages/home_page.dart';
 import 'presentation/pages/search_page.dart';
 
@@ -28,17 +30,18 @@ class MyApp extends StatelessWidget {
     final articleRepository = ArticleRepositoryImpl(apiDataSource);
     final getArticlesUseCase = GetArticlesUseCase(articleRepository);
     final searchArticlesUseCase = SearchArticlesUseCase(articleRepository);
+    final getSourcesUseCase = GetSourcesUseCase(articleRepository);
 
     return MultiBlocProvider(
       providers: [
-        BlocProvider(
-          create: (context) => ArticlesBloc(getArticlesUseCase),
-        ),
-        BlocProvider(
-          create: (context) => SearchBloc(searchArticlesUseCase),
-        ),
+        BlocProvider(create: (context) => ArticlesBloc(getArticlesUseCase)),
+        BlocProvider(create: (context) => SearchBloc(searchArticlesUseCase)),
         BlocProvider(
           create: (context) => ReadStatusBloc(repository: articleRepository),
+        ),
+        BlocProvider(
+          create: (context) =>
+              SourcesBloc(getSourcesUseCase: getSourcesUseCase),
         ),
       ],
       child: MaterialApp(
@@ -47,9 +50,7 @@ class MyApp extends StatelessWidget {
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.system,
         home: const HomePage(),
-        routes: {
-          '/search': (context) => const SearchPage(),
-        },
+        routes: {'/search': (context) => const SearchPage()},
         debugShowCheckedModeBanner: false,
       ),
     );
