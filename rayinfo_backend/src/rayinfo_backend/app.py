@@ -56,7 +56,7 @@ app = FastAPI(
     title="RayInfo Backend",
     description="RayInfo 跨平台资讯聚合器 API",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # 添加 CORS 支持
@@ -86,6 +86,71 @@ async def list_instances():
     """
     instances = instance_manager.list_all_instances()
     return {"total_count": len(instances), "instances": instances}
+
+
+@app.get("/collectors", summary="按类型分组列出采集器")
+async def list_collectors_by_type():
+    """按采集器类型分组列出采集器实例。
+
+    Returns:
+        dict: 按采集器类型分组的实例信息
+    """
+    instances = instance_manager.list_all_instances()
+    collectors_by_type = {}
+
+    for instance_id, instance_info in instances.items():
+        collector_name = instance_info["collector_name"]
+
+        if collector_name not in collectors_by_type:
+            collectors_by_type[collector_name] = {
+                "collector_name": collector_name,
+                "display_name": _get_collector_display_name(collector_name),
+                "total_instances": 0,
+                "instances": [],
+            }
+
+        # 添加实例信息
+        instance_detail = {
+            "instance_id": instance_id,
+            "param": instance_info.get("param"),
+            "display_name": _get_instance_display_name(
+                collector_name, instance_info.get("param")
+            ),
+            "status": instance_info.get("status"),
+            "health_score": instance_info.get("health_score"),
+            "run_count": instance_info.get("run_count", 0),
+            "error_count": instance_info.get("error_count", 0),
+            "last_run": instance_info.get("last_run"),
+            "created_at": instance_info.get("created_at"),
+        }
+
+        collectors_by_type[collector_name]["instances"].append(instance_detail)
+        collectors_by_type[collector_name]["total_instances"] += 1
+
+    return {
+        "total_collectors": len(collectors_by_type),
+        "collectors": collectors_by_type,
+    }
+
+
+def _get_collector_display_name(collector_name: str) -> str:
+    """获取采集器的显示名称"""
+    display_names = {
+        "mes.search": "搜索引擎",
+        "weibo.home": "微博首页",
+        "rss.feed": "RSS订阅",
+    }
+    return display_names.get(collector_name, collector_name)
+
+
+def _get_instance_display_name(collector_name: str, param: str | None) -> str:
+    """获取实例的显示名称"""
+    if param is None:
+        # 普通采集器，使用采集器名称
+        return _get_collector_display_name(collector_name)
+    else:
+        # 参数化采集器，使用参数作为显示名称
+        return param
 
 
 @app.get("/trigger/{instance_id}", summary="手动触发采集器实例")

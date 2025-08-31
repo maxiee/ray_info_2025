@@ -40,6 +40,7 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
         page: event.page,
         limit: event.limit,
         source: event.source,
+        instanceId: event.instanceId, // 传递实例ID参数
         query: event.query,
         startDate: event.startDate,
         endDate: event.endDate,
@@ -91,6 +92,7 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
       LoadArticles(
         page: 1,
         source: event.source,
+        instanceId: event.instanceId, // 传递实例ID参数
         query: event.query,
         startDate: event.startDate,
         endDate: event.endDate,

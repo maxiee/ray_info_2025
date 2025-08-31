@@ -5,13 +5,16 @@ import 'core/constants/app_constants.dart';
 import 'core/network/api_client.dart';
 import 'data/datasources/api_datasource.dart';
 import 'data/repositories/article_repository_impl.dart';
+import 'data/repositories/collector_repository_impl.dart';
 import 'domain/usecases/get_articles.dart';
 import 'domain/usecases/search_articles.dart';
 import 'domain/usecases/get_sources.dart';
+import 'domain/usecases/get_collectors.dart';
 import 'presentation/bloc/articles/articles_bloc.dart';
 import 'presentation/bloc/search/search_bloc.dart';
 import 'presentation/bloc/read_status/read_status_bloc.dart';
 import 'presentation/bloc/sources/sources_bloc.dart';
+import 'presentation/bloc/collectors/collectors_bloc.dart';
 import 'presentation/pages/home_page.dart';
 import 'presentation/pages/search_page.dart';
 
@@ -28,9 +31,11 @@ class MyApp extends StatelessWidget {
     final apiClient = ApiClient();
     final apiDataSource = ApiDataSourceImpl(apiClient);
     final articleRepository = ArticleRepositoryImpl(apiDataSource);
+    final collectorRepository = CollectorRepositoryImpl(apiDataSource);
     final getArticlesUseCase = GetArticlesUseCase(articleRepository);
     final searchArticlesUseCase = SearchArticlesUseCase(articleRepository);
     final getSourcesUseCase = GetSourcesUseCase(articleRepository);
+    final getCollectorsUseCase = GetCollectorsUseCase(collectorRepository);
 
     return MultiBlocProvider(
       providers: [
@@ -42,6 +47,10 @@ class MyApp extends StatelessWidget {
         BlocProvider(
           create: (context) =>
               SourcesBloc(getSourcesUseCase: getSourcesUseCase),
+        ),
+        BlocProvider(
+          create: (context) =>
+              CollectorsBloc(collectorRepository: collectorRepository),
         ),
       ],
       child: MaterialApp(

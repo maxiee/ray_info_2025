@@ -5,9 +5,13 @@ import '../bloc/articles/articles_event.dart';
 import '../bloc/articles/articles_state.dart';
 import '../bloc/read_status/read_status_bloc.dart';
 import '../bloc/read_status/read_status_state.dart';
+import '../bloc/collectors/collectors_bloc.dart';
+import '../bloc/collectors/collectors_event.dart';
 import '../widgets/article_card.dart';
-import '../widgets/source_sidebar.dart';
+import '../widgets/collector_type_sidebar.dart';
+import '../widgets/collector_instances_list.dart';
 import '../../data/models/read_status_models.dart';
+import '../../data/models/collector_models.dart';
 
 /// 首页 - 资讯列表
 class HomePage extends StatefulWidget {
@@ -22,7 +26,8 @@ class _HomePageState extends State<HomePage> {
 
   // 筛选状态
   ReadStatusFilter _currentReadStatus = ReadStatusFilter.unread;
-  String? _currentSource;
+  CollectorType? _selectedCollectorType;
+  CollectorInstance? _selectedInstance;
 
   // 侧边栏状态
   bool _isSidebarCollapsed = false;
@@ -69,7 +74,7 @@ class _HomePageState extends State<HomePage> {
             context.read<ArticlesBloc>().add(
               RefreshArticles(
                 readStatus: _currentReadStatus,
-                source: _currentSource,
+                instanceId: _selectedInstance?.instanceId,
               ),
             );
           }
@@ -86,12 +91,12 @@ class _HomePageState extends State<HomePage> {
 
     return Row(
       children: [
-        // 左侧边栏
+        // 左侧边栏 - 采集器类型
         if (isDesktop || !_isSidebarCollapsed)
-          SourceSidebar(
-            selectedSource: _currentSource,
+          CollectorTypeSidebar(
+            selectedCollectorType: _selectedCollectorType,
             selectedReadStatus: _currentReadStatus,
-            onSourceChanged: _onSourceChanged,
+            onCollectorTypeChanged: _onCollectorTypeChanged,
             onReadStatusChanged: _onReadStatusChanged,
             onSearchPressed: () {
               Navigator.pushNamed(context, '/search');
@@ -106,6 +111,18 @@ class _HomePageState extends State<HomePage> {
                   },
           ),
 
+        // 中间列 - 采集器实例列表
+        if ((isDesktop || !_isSidebarCollapsed) &&
+            _selectedCollectorType != null)
+          CollectorInstancesList(
+            selectedCollectorType: _selectedCollectorType,
+            selectedInstanceId: _selectedInstance?.instanceId,
+            onInstanceSelected: _onInstanceSelected,
+            onRefresh: () {
+              context.read<CollectorsBloc>().add(const RefreshCollectors());
+            },
+          ),
+
         // 主内容区域
         Expanded(
           child: Stack(
@@ -114,12 +131,26 @@ class _HomePageState extends State<HomePage> {
                 builder: (context, state) {
                   return RefreshIndicator(
                     onRefresh: () async {
-                      context.read<ArticlesBloc>().add(
-                        RefreshArticles(
-                          readStatus: _currentReadStatus,
-                          source: _currentSource,
-                        ),
-                      );
+                      // 根据当前选择状态刷新文章
+                      if (_selectedInstance != null) {
+                        context.read<ArticlesBloc>().add(
+                          RefreshArticles(
+                            readStatus: _currentReadStatus,
+                            instanceId: _selectedInstance!.instanceId,
+                          ),
+                        );
+                      } else if (_selectedCollectorType != null) {
+                        context.read<ArticlesBloc>().add(
+                          RefreshArticles(
+                            readStatus: _currentReadStatus,
+                            source: _selectedCollectorType!.collectorName,
+                          ),
+                        );
+                      } else {
+                        context.read<ArticlesBloc>().add(
+                          RefreshArticles(readStatus: _currentReadStatus),
+                        );
+                      }
                     },
                     child: _buildMainContent(state),
                   );
@@ -151,13 +182,41 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 处理来源变化
-  void _onSourceChanged(String? source) {
+  /// 处理采集器类型变化
+  void _onCollectorTypeChanged(CollectorType? collectorType) {
     setState(() {
-      _currentSource = source;
+      _selectedCollectorType = collectorType;
+      _selectedInstance = null; // 清除之前选择的实例
     });
+    // 当选择采集器类型时，加载所有该类型的文章
+    if (collectorType != null) {
+      context.read<ArticlesBloc>().add(
+        LoadArticles(
+          page: 1,
+          readStatus: _currentReadStatus,
+          source: collectorType.collectorName,
+        ),
+      );
+    } else {
+      // 如果没有选择采集器类型，加载所有文章
+      context.read<ArticlesBloc>().add(
+        LoadArticles(page: 1, readStatus: _currentReadStatus),
+      );
+    }
+  }
+
+  /// 处理采集器实例选择
+  void _onInstanceSelected(CollectorInstance instance) {
+    setState(() {
+      _selectedInstance = instance;
+    });
+    // 根据实例ID加载对应的文章
     context.read<ArticlesBloc>().add(
-      LoadArticles(page: 1, readStatus: _currentReadStatus, source: source),
+      LoadArticles(
+        page: 1,
+        readStatus: _currentReadStatus,
+        instanceId: instance.instanceId,
+      ),
     );
   }
 
@@ -166,9 +225,32 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _currentReadStatus = readStatus;
     });
-    context.read<ArticlesBloc>().add(
-      LoadArticles(page: 1, readStatus: readStatus, source: _currentSource),
-    );
+
+    // 根据当前选择状态加载文章
+    if (_selectedInstance != null) {
+      // 如果有选择的实例，使用 instanceId
+      context.read<ArticlesBloc>().add(
+        LoadArticles(
+          page: 1,
+          readStatus: readStatus,
+          instanceId: _selectedInstance!.instanceId,
+        ),
+      );
+    } else if (_selectedCollectorType != null) {
+      // 如果有选择的采集器类型，使用 source
+      context.read<ArticlesBloc>().add(
+        LoadArticles(
+          page: 1,
+          readStatus: readStatus,
+          source: _selectedCollectorType!.collectorName,
+        ),
+      );
+    } else {
+      // 没有任何选择，加载所有文章
+      context.read<ArticlesBloc>().add(
+        LoadArticles(page: 1, readStatus: readStatus),
+      );
+    }
   }
 
   Widget _buildMainContent(ArticlesState state) {
@@ -208,12 +290,26 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: () {
-              context.read<ArticlesBloc>().add(
-                LoadArticles(
-                  readStatus: _currentReadStatus,
-                  source: _currentSource,
-                ),
-              );
+              // 根据当前选择状态重新加载文章
+              if (_selectedInstance != null) {
+                context.read<ArticlesBloc>().add(
+                  LoadArticles(
+                    readStatus: _currentReadStatus,
+                    instanceId: _selectedInstance!.instanceId,
+                  ),
+                );
+              } else if (_selectedCollectorType != null) {
+                context.read<ArticlesBloc>().add(
+                  LoadArticles(
+                    readStatus: _currentReadStatus,
+                    source: _selectedCollectorType!.collectorName,
+                  ),
+                );
+              } else {
+                context.read<ArticlesBloc>().add(
+                  LoadArticles(readStatus: _currentReadStatus),
+                );
+              }
             },
             child: const Text('重试'),
           ),

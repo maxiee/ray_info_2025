@@ -8,14 +8,15 @@ import '../models/read_status_models.dart';
 /// 资讯Repository实现
 class ArticleRepositoryImpl implements ArticleRepository {
   final ApiDataSource _apiDataSource;
-  
+
   ArticleRepositoryImpl(this._apiDataSource);
-  
+
   @override
   Future<(List<Article>, Pagination)> getArticles({
     int page = 1,
     int limit = 20,
     String? source,
+    String? instanceId, // 新增实例ID参数
     String? query,
     DateTime? startDate,
     DateTime? endDate,
@@ -26,18 +27,19 @@ class ArticleRepositoryImpl implements ArticleRepository {
         page: page,
         limit: limit,
         source: source,
+        instanceId: instanceId, // 传递实例ID参数
         query: query,
         startDate: startDate,
         endDate: endDate,
         readStatus: readStatus, // 传递新参数
       );
-      
+
       return (response.data, response.pagination);
     } catch (e) {
       throw Exception('获取资讯列表失败: $e');
     }
   }
-  
+
   @override
   Future<Article> getArticleDetail(String postId) async {
     try {
@@ -46,7 +48,7 @@ class ArticleRepositoryImpl implements ArticleRepository {
       throw Exception('获取资讯详情失败: $e');
     }
   }
-  
+
   @override
   Future<(List<Article>, Pagination)> searchArticles({
     required String searchQuery,
@@ -65,13 +67,13 @@ class ArticleRepositoryImpl implements ArticleRepository {
         startDate: startDate,
         endDate: endDate,
       );
-      
+
       return (response.data, response.pagination);
     } catch (e) {
       throw Exception('搜索资讯失败: $e');
     }
   }
-  
+
   @override
   Future<List<Source>> getSources() async {
     try {
@@ -81,13 +83,13 @@ class ArticleRepositoryImpl implements ArticleRepository {
       throw Exception('获取来源统计失败: $e');
     }
   }
-  
+
   // 已读状态相关方法实现
-  
+
   @override
   Future<ReadStatusResponse> toggleReadStatus(
-    String postId, 
-    ReadStatusRequest request
+    String postId,
+    ReadStatusRequest request,
   ) async {
     try {
       return await _apiDataSource.toggleReadStatus(postId, request);
@@ -95,10 +97,10 @@ class ArticleRepositoryImpl implements ArticleRepository {
       throw Exception('切换已读状态失败: $e');
     }
   }
-  
+
   @override
   Future<BatchReadStatusResponse> batchToggleReadStatus(
-    BatchReadStatusRequest request
+    BatchReadStatusRequest request,
   ) async {
     try {
       return await _apiDataSource.batchToggleReadStatus(request);
@@ -106,7 +108,7 @@ class ArticleRepositoryImpl implements ArticleRepository {
       throw Exception('批量切换已读状态失败: $e');
     }
   }
-  
+
   @override
   Future<ReadStatusResponse> getReadStatus(String postId) async {
     try {

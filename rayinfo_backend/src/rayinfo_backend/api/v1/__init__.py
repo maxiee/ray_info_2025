@@ -24,6 +24,7 @@ from ..schemas import (
     BatchReadStatusResponse,
     ArticleWithReadStatus,
 )
+from ...utils.instance_id import instance_manager
 
 # 创建路由器
 router = APIRouter(prefix="/api/v1", tags=["articles"])
@@ -44,12 +45,13 @@ def get_read_status_service() -> ReadStatusService:
     "/articles",
     response_model=PaginatedArticlesResponse,
     summary="获取资讯列表",
-    description="获取分页的资讯列表，支持来源筛选、关键词筛选和日期范围筛选",
+    description="获取分页的资讯列表，支持来源筛选、实例ID筛选、关键词筛选和日期范围筛选",
 )
 async def get_articles(
     page: int = Query(1, ge=1, description="页码"),
     limit: int = Query(20, ge=1, le=100, description="每页条数"),
     source: Optional[str] = Query(None, description="来源筛选"),
+    instance_id: Optional[str] = Query(None, description="采集器实例ID筛选"),
     query: Optional[str] = Query(None, description="关键词筛选"),
     start_date: Optional[datetime] = Query(None, description="开始日期"),
     end_date: Optional[datetime] = Query(None, description="结束日期"),
@@ -62,6 +64,7 @@ async def get_articles(
 
     支持的筛选参数：
     - source: 按来源筛选 (如: mes.search, weibo.home)
+    - instance_id: 按采集器实例ID筛选，会自动解析为对应的采集器和参数
     - query: 按关键词筛选
     - start_date/end_date: 按日期范围筛选
 
@@ -69,6 +72,21 @@ async def get_articles(
         PaginatedArticlesResponse: 分页资讯数据
     """
     try:
+        # 如果提供了instance_id，解析为对应的source和query参数
+        if instance_id:
+            from ...utils.instance_id import instance_manager
+
+            instance = instance_manager.get_instance(instance_id)
+            if instance:
+                source = instance.collector.name
+                # 对于参数化采集器，使用参数作为query过滤条件
+                if instance.param:
+                    query = instance.param
+            else:
+                raise HTTPException(
+                    status_code=404, detail=f"采集器实例 {instance_id} 不存在"
+                )
+
         # 构建筛选参数
         filters = ArticleFilters(
             page=page,
@@ -84,6 +102,8 @@ async def get_articles(
         result = service.get_articles_paginated(filters)
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -326,3 +346,71 @@ async def get_article_detail(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取资讯详情失败: {str(e)}",
         )
+
+
+# 采集器相关API
+
+
+@router.get("/collectors", summary="按类型分组列出采集器")
+async def list_collectors_by_type():
+    """按采集器类型分组列出采集器实例。
+
+    Returns:
+        dict: 按采集器类型分组的实例信息
+    """
+    instances = instance_manager.list_all_instances()
+    collectors_by_type = {}
+
+    for instance_id, instance_info in instances.items():
+        collector_name = instance_info["collector_name"]
+
+        if collector_name not in collectors_by_type:
+            collectors_by_type[collector_name] = {
+                "collector_name": collector_name,
+                "display_name": _get_collector_display_name(collector_name),
+                "total_instances": 0,
+                "instances": [],
+            }
+
+        # 添加实例信息
+        instance_detail = {
+            "instance_id": instance_id,
+            "param": instance_info.get("param"),
+            "display_name": _get_instance_display_name(
+                collector_name, instance_info.get("param")
+            ),
+            "status": instance_info.get("status"),
+            "health_score": instance_info.get("health_score"),
+            "run_count": instance_info.get("run_count", 0),
+            "error_count": instance_info.get("error_count", 0),
+            "last_run": instance_info.get("last_run"),
+            "created_at": instance_info.get("created_at"),
+        }
+
+        collectors_by_type[collector_name]["instances"].append(instance_detail)
+        collectors_by_type[collector_name]["total_instances"] += 1
+
+    return {
+        "total_collectors": len(collectors_by_type),
+        "collectors": collectors_by_type,
+    }
+
+
+def _get_collector_display_name(collector_name: str) -> str:
+    """获取采集器的显示名称"""
+    display_names = {
+        "mes.search": "搜索引擎",
+        "weibo.home": "微博首页",
+        "rss.feed": "RSS订阅",
+    }
+    return display_names.get(collector_name, collector_name)
+
+
+def _get_instance_display_name(collector_name: str, param: str | None) -> str:
+    """获取实例的显示名称"""
+    if param is None:
+        # 普通采集器，使用采集器名称
+        return _get_collector_display_name(collector_name)
+    else:
+        # 参数化采集器，使用参数作为显示名称
+        return param
