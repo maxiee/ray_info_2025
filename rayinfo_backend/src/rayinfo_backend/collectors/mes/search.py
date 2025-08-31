@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from typing import AsyncIterator, List, Dict, Any, Optional
 
 from ..base import BaseCollector, RawEvent, QuotaExceededException
@@ -19,7 +20,7 @@ class MesCollector(BaseCollector):
     - 运行: mes search <query> --output json --limit N
     - 支持新的 JSON 格式: {"results": [...], "count": N, "rate_limit": {...}}
     - 兼容旧的 JSON 格式: [result1, result2, ...]
-    - 将每条结果转换为 RawEvent (post_id 使用结果 url 便于去重)
+    - 将每条结果转换为 RawEvent (post_id 使用 UUID 确保唯一性)
     - 记录 API 使用配额信息
 
     未来扩展预留：
@@ -241,9 +242,9 @@ class MesCollector(BaseCollector):
         for item in results:
             # 结果字段: title, url, description, engine
             url = item.get("url") or ""
-            # post_id 用 url 作为去重键 (若缺失则 hash 整个对象)
+            # 生成 UUID 作为 post_id，确保每条资讯的唯一性
             raw: Dict[str, Any] = {
-                "post_id": url or json.dumps(item, ensure_ascii=False),
+                "post_id": str(uuid.uuid4()),
                 "query": query,
                 "title": item.get("title"),
                 "url": url,
