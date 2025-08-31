@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../domain/entities/article.dart';
+import '../bloc/articles/articles_bloc.dart';
+import 'read_status_button.dart';
 
 /// 资讯卡片组件
 class ArticleCard extends StatelessWidget {
@@ -55,6 +58,7 @@ class ArticleCard extends StatelessWidget {
               
               // 底部信息栏
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // 来源标签
                   Container(
@@ -111,6 +115,19 @@ class ArticleCard extends StatelessWidget {
                   ],
                 ],
               ),
+              
+              const SizedBox(height: 8),
+              
+              // 已读状态按钮行
+              Row(
+                children: [
+                  ReadStatusButton(
+                    article: article,
+                    onStatusChanged: () => _onReadStatusChanged(context),
+                  ),
+                  const Spacer(),
+                ],
+              ),
             ],
           ),
         ),
@@ -130,5 +147,15 @@ class ArticleCard extends StatelessWidget {
     } catch (e) {
       debugPrint('启动URL失败: $e');
     }
+  }
+  
+  /// 已读状态变化回调
+  void _onReadStatusChanged(BuildContext context) {
+    // 通知ArticlesBloc更新列表中的文章状态
+    context.read<ArticlesBloc>().updateArticleStatus(
+      article.postId,
+      !article.isRead, // 切换状态
+      !article.isRead ? DateTime.now() : null,
+    );
   }
 }

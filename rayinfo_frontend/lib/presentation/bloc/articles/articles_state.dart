@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../domain/entities/article.dart';
 import '../../../domain/entities/pagination.dart';
+import '../../../data/models/read_status_models.dart';
 
 /// 资讯列表状态
 abstract class ArticlesState extends Equatable {
@@ -25,6 +26,7 @@ class ArticlesLoaded extends ArticlesState {
   final String? currentQuery;
   final DateTime? currentStartDate;
   final DateTime? currentEndDate;
+  final ReadStatusFilter currentReadStatus; // 新增已读状态筛选
   
   const ArticlesLoaded({
     required this.articles,
@@ -34,6 +36,7 @@ class ArticlesLoaded extends ArticlesState {
     this.currentQuery,
     this.currentStartDate,
     this.currentEndDate,
+    this.currentReadStatus = ReadStatusFilter.all,
   });
   
   /// 复制状态并更新部分字段
@@ -45,6 +48,7 @@ class ArticlesLoaded extends ArticlesState {
     String? currentQuery,
     DateTime? currentStartDate,
     DateTime? currentEndDate,
+    ReadStatusFilter? currentReadStatus,
   }) {
     return ArticlesLoaded(
       articles: articles ?? this.articles,
@@ -54,6 +58,7 @@ class ArticlesLoaded extends ArticlesState {
       currentQuery: currentQuery ?? this.currentQuery,
       currentStartDate: currentStartDate ?? this.currentStartDate,
       currentEndDate: currentEndDate ?? this.currentEndDate,
+      currentReadStatus: currentReadStatus ?? this.currentReadStatus,
     );
   }
   
@@ -66,6 +71,7 @@ class ArticlesLoaded extends ArticlesState {
     currentQuery,
     currentStartDate,
     currentEndDate,
+    currentReadStatus,
   ];
 }
 

@@ -82,3 +82,43 @@ class ArticleFilters(BaseModel):
     query: Optional[str] = Field(None, description="关键词搜索") 
     start_date: Optional[datetime] = Field(None, description="开始日期")
     end_date: Optional[datetime] = Field(None, description="结束日期")
+    read_status: Optional[str] = Field(None, description="已读状态筛选：read, unread, all")
+
+
+# 已读状态相关模型
+class ReadStatusRequest(BaseModel):
+    """已读状态请求模型"""
+    is_read: bool = Field(..., description="是否已读：True=已读，False=未读")
+
+
+class BatchReadStatusRequest(BaseModel):
+    """批量已读状态请求模型"""
+    post_ids: List[str] = Field(..., description="资讯ID列表")
+    is_read: bool = Field(..., description="是否已读：True=已读，False=未读")
+
+
+class ReadStatusResponse(BaseModel):
+    """已读状态响应模型"""
+    post_id: str = Field(..., description="资讯ID")
+    is_read: bool = Field(..., description="是否已读")
+    read_at: Optional[datetime] = Field(None, description="标记已读时间")
+    updated_at: datetime = Field(..., description="最后更新时间")
+    
+    class Config:
+        from_attributes = True
+
+
+class BatchReadStatusResponse(BaseModel):
+    """批量已读状态响应模型"""
+    success_count: int = Field(..., description="成功处理的数量")
+    failed_count: int = Field(..., description="失败数量")
+    results: List[ReadStatusResponse] = Field(..., description="处理结果详情")
+
+
+class ArticleWithReadStatus(ArticleBase):
+    """带已读状态的资讯模型"""
+    is_read: bool = Field(False, description="是否已读")
+    read_at: Optional[datetime] = Field(None, description="标记已读时间")
+    
+    class Config:
+        from_attributes = True

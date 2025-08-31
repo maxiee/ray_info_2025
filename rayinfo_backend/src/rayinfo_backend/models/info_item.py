@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import threading
 
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Float, create_engine
+from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Float, Boolean, ForeignKey, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -161,6 +161,70 @@ class RawInfoItem(Base):
         }
 
 
+class ArticleReadStatus(Base):
+    """资讯已读状态表
+    
+    用于存储用户对资讯的已读状态，支持手动标记已读/未读。
+    
+    字段说明：
+    - post_id: 外键，关联到 raw_info_items 表的 post_id
+    - is_read: 已读状态，默认为 False
+    - read_at: 标记已读的时间戳，未读时为 None
+    - updated_at: 最后更新时间
+    """
+    
+    __tablename__ = "article_read_status"
+    
+    # 主键：使用 post_id 作为主键，与 raw_info_items 一对一关联
+    post_id = Column(
+        String, 
+        ForeignKey("raw_info_items.post_id", ondelete="CASCADE"), 
+        primary_key=True,
+        comment="资讯唯一标识符，外键关联到raw_info_items表"
+    )
+    
+    # 已读状态
+    is_read = Column(
+        Boolean, 
+        nullable=False, 
+        default=False, 
+        index=True,
+        comment="已读状态：True=已读，False=未读"
+    )
+    
+    # 时间戳字段
+    read_at = Column(
+        DateTime, 
+        nullable=True, 
+        index=True,
+        comment="标记已读的时间戳，未读时为None"
+    )
+    updated_at = Column(
+        DateTime, 
+        nullable=False, 
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        comment="最后更新时间"
+    )
+    
+    def __repr__(self) -> str:
+        return (
+            f"<ArticleReadStatus("
+            f"post_id={self.post_id}, "
+            f"is_read={self.is_read}, "
+            f"read_at={self.read_at})>"
+        )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "post_id": self.post_id,
+            "is_read": self.is_read,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class DatabaseManager:
     """数据库管理器（单例模式）
 
@@ -230,6 +294,17 @@ class DatabaseManager:
                     "CREATE INDEX IF NOT EXISTS idx_collector_execution_time "
                     "ON collector_execution_state(collector_name, last_execution_time)"
                 ))
+                
+                # 为article_read_status表创建索引
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_article_read_status_is_read "
+                    "ON article_read_status(is_read)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_article_read_status_read_at "
+                    "ON article_read_status(read_at)"
+                ))
+                
                 conn.commit()
         except Exception as e:
             # 如果索引已存在或创建失败，记录但不中断

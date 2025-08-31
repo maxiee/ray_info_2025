@@ -1,6 +1,7 @@
 import '../entities/article.dart';
 import '../entities/pagination.dart';
 import '../repositories/article_repository.dart';
+import '../../data/models/read_status_models.dart';
 
 /// 获取资讯列表用例
 class GetArticlesUseCase {
@@ -16,6 +17,7 @@ class GetArticlesUseCase {
     String? query,
     DateTime? startDate,
     DateTime? endDate,
+    ReadStatusFilter? readStatus, // 新增已读状态筛选
   }) async {
     if (page < 1) {
       throw ArgumentError('页码必须大于0');
@@ -32,6 +34,7 @@ class GetArticlesUseCase {
       query: query,
       startDate: startDate,
       endDate: endDate,
+      readStatus: readStatus,
     );
   }
 }

@@ -76,6 +76,25 @@ class ApiClient {
     }
   }
   
+  /// PUT 请求
+  Future<Response<T>> put<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    try {
+      return await _dio.put<T>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      );
+    } on DioException catch (e) {
+      throw _handleError(e);
+    }
+  }
+  
   /// 处理错误
   Exception _handleError(DioException error) {
     switch (error.type) {

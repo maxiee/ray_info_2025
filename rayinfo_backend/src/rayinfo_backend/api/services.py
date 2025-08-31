@@ -17,9 +17,13 @@ from ..api.schemas import (
     ArticleDetailResponse,
     PaginationInfo,
     SourcesResponse,
-    SourceStats
+    SourceStats,
+    ReadStatusRequest,
+    ReadStatusResponse,
+    BatchReadStatusRequest,
+    BatchReadStatusResponse
 )
-from ..models.info_item import RawInfoItem
+from ..models.info_item import RawInfoItem, ArticleReadStatus
 
 
 class ArticleService:
@@ -50,18 +54,27 @@ class ArticleService:
             PaginatedArticlesResponse: 分页资讯响应
         """
         # 从数据访问层获取数据
-        articles, total_count = self.repository.get_articles_paginated(filters)
+        if filters.read_status and filters.read_status != 'all':
+            # 如果需要已读状态筛选，使用带已读状态的查询
+            articles_with_status, total_count = self.repository.get_articles_with_read_status(filters)
+            # 转换为带已读状态的响应模型
+            article_responses = [
+                self._convert_to_article_with_status_response(article, read_status) 
+                for article, read_status in articles_with_status
+            ]
+        else:
+            # 正常的查询，不包含已读状态
+            articles, total_count = self.repository.get_articles_paginated(filters)
+            # 转换为响应模型
+            article_responses = [
+                self._convert_to_article_response(article) 
+                for article in articles
+            ]
         
         # 计算分页信息
         total_pages = math.ceil(total_count / filters.limit) if total_count > 0 else 1
         has_next = filters.page < total_pages
         has_prev = filters.page > 1
-        
-        # 转换为响应模型
-        article_responses = [
-            self._convert_to_article_response(article) 
-            for article in articles
-        ]
         
         pagination_info = PaginationInfo(
             current_page=filters.page,
@@ -177,6 +190,34 @@ class ArticleService:
             processed=article.processed
         )
     
+    def _convert_to_article_with_status_response(
+        self, 
+        article: RawInfoItem, 
+        read_status: Optional[ArticleReadStatus]
+    ) -> ArticleResponse:
+        """将数据库模型转换为带已读状态的API响应模型
+        
+        Args:
+            article: 数据库模型
+            read_status: 已读状态模型
+            
+        Returns:
+            ArticleResponse: API响应模型
+        """
+        # 注意：这里仍然返回ArticleResponse，但在实际应用中可能需要
+        # 扩展ArticleResponse模型来包含已读状态信息
+        return ArticleResponse(
+            post_id=article.post_id,
+            source=article.source,
+            title=article.title,
+            url=article.url,
+            description=article.description,
+            query=article.query,
+            engine=article.engine,
+            collected_at=article.collected_at,
+            processed=article.processed
+        )
+    
     def _convert_to_article_detail_response(
         self, 
         article: RawInfoItem
@@ -200,4 +241,115 @@ class ArticleService:
             raw_data=article.raw_data,
             collected_at=article.collected_at,
             processed=article.processed
+        )
+
+
+class ReadStatusService:
+    """已读状态业务逻辑服务
+    
+    处理资讯已读状态的业务逻辑，包括单个和批量操作。
+    """
+    
+    def __init__(self, repository: Optional[ArticleRepository] = None):
+        """初始化服务
+        
+        Args:
+            repository: 数据访问层实例，如果为None则创建默认实例
+        """
+        self.repository = repository or ArticleRepository()
+    
+    def toggle_read_status(
+        self, 
+        post_id: str, 
+        request: ReadStatusRequest
+    ) -> Optional[ReadStatusResponse]:
+        """切换单篇资讯的已读状态
+        
+        Args:
+            post_id: 资讯ID
+            request: 已读状态请求
+            
+        Returns:
+            ReadStatusResponse: 已读状态响应，如果资讯不存在则返回None
+        """
+        # 检查资讯是否存在
+        article = self.repository.get_article_by_id(post_id)
+        if not article:
+            return None
+        
+        # 更新已读状态
+        read_status = self.repository.update_read_status(post_id, request.is_read)
+        
+        # 转换为响应模型
+        return ReadStatusResponse(
+            post_id=read_status.post_id,
+            is_read=read_status.is_read,
+            read_at=read_status.read_at,
+            updated_at=read_status.updated_at
+        )
+    
+    def batch_toggle_read_status(
+        self, 
+        request: BatchReadStatusRequest
+    ) -> BatchReadStatusResponse:
+        """批量切换资讯的已读状态
+        
+        Args:
+            request: 批量已读状态请求
+            
+        Returns:
+            BatchReadStatusResponse: 批量操作结果
+        """
+        results = []
+        success_count = 0
+        failed_count = 0
+        
+        for post_id in request.post_ids:
+            try:
+                # 检查资讯是否存在
+                article = self.repository.get_article_by_id(post_id)
+                if not article:
+                    failed_count += 1
+                    continue
+                
+                # 更新已读状态
+                read_status = self.repository.update_read_status(post_id, request.is_read)
+                
+                # 添加成功结果
+                results.append(ReadStatusResponse(
+                    post_id=read_status.post_id,
+                    is_read=read_status.is_read,
+                    read_at=read_status.read_at,
+                    updated_at=read_status.updated_at
+                ))
+                success_count += 1
+                
+            except Exception:
+                # 在实际应用中应该记录具体的错误信息
+                failed_count += 1
+        
+        return BatchReadStatusResponse(
+            success_count=success_count,
+            failed_count=failed_count,
+            results=results
+        )
+    
+    def get_read_status(self, post_id: str) -> Optional[ReadStatusResponse]:
+        """获取资讯的已读状态
+        
+        Args:
+            post_id: 资讯ID
+            
+        Returns:
+            ReadStatusResponse: 已读状态响应，如果不存在则返回None
+        """
+        read_status = self.repository.get_read_status(post_id)
+        if not read_status:
+            return None
+        
+        return ReadStatusResponse(
+            post_id=read_status.post_id,
+            is_read=read_status.is_read,
+            read_at=read_status.read_at,
+            updated_at=read_status.updated_at
         )

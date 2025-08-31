@@ -4,6 +4,8 @@ import '../bloc/articles/articles_bloc.dart';
 import '../bloc/articles/articles_event.dart';
 import '../bloc/articles/articles_state.dart';
 import '../widgets/article_card.dart';
+import '../widgets/article_filter_bar.dart';
+import '../../data/models/read_status_models.dart';
 
 /// 首页 - 资讯列表
 class HomePage extends StatefulWidget {
@@ -15,6 +17,11 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
+  
+  // 筛选状态
+  ReadStatusFilter _currentReadStatus = ReadStatusFilter.all;
+  String? _currentSource;
+  bool _showFilters = false;
   
   @override
   void initState() {
@@ -53,21 +60,37 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.filter_list),
+            icon: Icon(_showFilters ? Icons.filter_list : Icons.filter_list_outlined),
             onPressed: () {
-              // TODO: 显示筛选对话框
-              _showFilterDialog();
+              setState(() {
+                _showFilters = !_showFilters;
+              });
             },
+            tooltip: _showFilters ? '隐藏筛选器' : '显示筛选器',
           ),
         ],
       ),
       body: BlocBuilder<ArticlesBloc, ArticlesState>(
         builder: (context, state) {
-          return RefreshIndicator(
-            onRefresh: () async {
-              context.read<ArticlesBloc>().add(const RefreshArticles());
-            },
-            child: _buildBody(state),
+          return Column(
+            children: [
+              // 筛选器（按需显示）
+              if (_showFilters)
+                _buildFilterSection(state),
+              
+              // 主内容区域
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    context.read<ArticlesBloc>().add(RefreshArticles(
+                      readStatus: _currentReadStatus,
+                      source: _currentSource,
+                    ));
+                  },
+                  child: _buildBody(state),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -156,61 +179,40 @@ class _HomePageState extends State<HomePage> {
     );
   }
   
-  /// 显示筛选对话框
-  void _showFilterDialog() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.3,
-        builder: (context, scrollController) => Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // 拖拽指示器
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              
-              Text(
-                '筛选条件',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              
-              const SizedBox(height: 16),
-              
-              // TODO: 添加筛选选项
-              Expanded(
-                child: ListView(
-                  controller: scrollController,
-                  children: const [
-                    ListTile(
-                      title: Text('全部来源'),
-                      trailing: Icon(Icons.radio_button_checked),
-                    ),
-                    ListTile(
-                      title: Text('搜索引擎'),
-                      trailing: Icon(Icons.radio_button_unchecked),
-                    ),
-                    ListTile(
-                      title: Text('微博首页'),
-                      trailing: Icon(Icons.radio_button_unchecked),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+  /// 构建筛选器区域
+  Widget _buildFilterSection(ArticlesState state) {
+    // 获取可用的来源列表（可以从状态或API获取）
+    final availableSources = <String>[
+      'mes.search',
+      'weibo.home',
+      // 可以根据实际数据动态生成
+    ];
+    
+    return ArticleFilterBar(
+      selectedReadStatus: _currentReadStatus,
+      selectedSource: _currentSource,
+      availableSources: availableSources,
+      onReadStatusChanged: (readStatus) {
+        setState(() {
+          _currentReadStatus = readStatus;
+        });
+        context.read<ArticlesBloc>().filterByReadStatus(readStatus);
+      },
+      onSourceChanged: (source) {
+        setState(() {
+          _currentSource = source;
+        });
+        context.read<ArticlesBloc>().filterBySource(source);
+      },
+      onClearFilters: () {
+        setState(() {
+          _currentReadStatus = ReadStatusFilter.all;
+          _currentSource = null;
+        });
+        context.read<ArticlesBloc>().add(const LoadArticles(
+          page: 1,
+        ));
+      },
     );
   }
 }

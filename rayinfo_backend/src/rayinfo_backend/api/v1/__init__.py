@@ -7,17 +7,23 @@ from __future__ import annotations
 
 from typing import Optional
 from datetime import datetime
+from urllib.parse import unquote
 
-from fastapi import APIRouter, HTTPException, Query, Depends, status
+from fastapi import APIRouter, HTTPException, Query, Depends, status, Path
 from fastapi.responses import JSONResponse
 
-from ..services import ArticleService
+from ..services import ArticleService, ReadStatusService
 from ..schemas import (
     PaginatedArticlesResponse,
     ArticleDetailResponse,
     SourcesResponse,
     ArticleFilters,
-    ErrorResponse
+    ErrorResponse,
+    ReadStatusRequest,
+    ReadStatusResponse,
+    BatchReadStatusRequest,
+    BatchReadStatusResponse,
+    ArticleWithReadStatus
 )
 
 # 创建路由器
@@ -27,6 +33,11 @@ router = APIRouter(prefix="/api/v1", tags=["articles"])
 def get_article_service() -> ArticleService:
     """获取文章服务实例（依赖注入）"""
     return ArticleService()
+
+
+def get_read_status_service() -> ReadStatusService:
+    """获取已读状态服务实例（依赖注入）"""
+    return ReadStatusService()
 
 
 @router.get(
@@ -42,6 +53,7 @@ async def get_articles(
     query: Optional[str] = Query(None, description="关键词筛选"),
     start_date: Optional[datetime] = Query(None, description="开始日期"),
     end_date: Optional[datetime] = Query(None, description="结束日期"),
+    read_status: Optional[str] = Query(None, description="已读状态筛选：read, unread, all"),
     service: ArticleService = Depends(get_article_service)
 ):
     """获取分页资讯列表
@@ -62,7 +74,8 @@ async def get_articles(
             source=source,
             query=query,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            read_status=read_status
         )
         
         # 获取分页数据
@@ -76,12 +89,119 @@ async def get_articles(
         )
 
 
-@router.get(
-    "/articles/{post_id}",
-    response_model=ArticleDetailResponse,
-    summary="获取资讯详情",
-    description="根据资讯ID获取详细信息，包含完整的原始数据"
+# 已读状态相关路由（必须在 {post_id:path} 路由之前定义）
+@router.put(
+    "/articles/{post_id:path}/read-status",
+    response_model=ReadStatusResponse,
+    summary="切换资讯已读状态",
+    description="手动切换单篇资讯的已读/未读状态"
 )
+async def toggle_article_read_status(
+    post_id: str,
+    request: ReadStatusRequest,
+    service: ReadStatusService = Depends(get_read_status_service)
+):
+    """切换资讯已读状态
+    
+    Args:
+        post_id: 资讯唯一标识符（URL编码的）
+        request: 已读状态请求数据
+        
+    Returns:
+        ReadStatusResponse: 更新后的已读状态
+        
+    Raises:
+        HTTPException: 当资讯不存在时返回404错误
+    """
+    try:
+        # 解码URL编码的post_id
+        decoded_post_id = unquote(post_id)
+        result = service.toggle_read_status(decoded_post_id, request)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"资讯 {decoded_post_id} 不存在"
+            )
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新已读状态失败: {str(e)}"
+        )
+
+
+@router.get(
+    "/articles/{post_id:path}/read-status",
+    response_model=ReadStatusResponse,
+    summary="获取资讯已读状态",
+    description="获取单篇资讯的已读状态信息"
+)
+async def get_article_read_status(
+    post_id: str,
+    service: ReadStatusService = Depends(get_read_status_service)
+):
+    """获取资讯已读状态
+    
+    Args:
+        post_id: 资讯唯一标识符（URL编码的）
+        
+    Returns:
+        ReadStatusResponse: 已读状态信息
+        
+    Raises:
+        HTTPException: 当资讯不存在时返回404错误
+    """
+    try:
+        # 解码URL编码的post_id
+        decoded_post_id = unquote(post_id)
+        result = service.get_read_status(decoded_post_id)
+        if not result:
+            # 如果没有已读状态记录，返回默认未读状态
+            return ReadStatusResponse(
+                post_id=decoded_post_id,
+                is_read=False,
+                read_at=None,
+                updated_at=datetime.now()
+            )
+        return result
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取已读状态失败: {str(e)}"
+        )
+
+
+@router.put(
+    "/articles/batch-read-status",
+    response_model=BatchReadStatusResponse,
+    summary="批量设置资讯已读状态",
+    description="批量设置多篇资讯的已读/未读状态"
+)
+async def batch_toggle_read_status(
+    request: BatchReadStatusRequest,
+    service: ReadStatusService = Depends(get_read_status_service)
+):
+    """批量设置资讯已读状态
+    
+    Args:
+        request: 批量已读状态请求数据
+        
+    Returns:
+        BatchReadStatusResponse: 批量操作结果
+    """
+    try:
+        result = service.batch_toggle_read_status(request)
+        return result
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"批量更新已读状态失败: {str(e)}"
+        )
 async def get_article_detail(
     post_id: str,
     service: ArticleService = Depends(get_article_service)
@@ -89,7 +209,7 @@ async def get_article_detail(
     """获取资讯详情
     
     Args:
-        post_id: 资讯唯一标识符
+        post_id: 资讯唯一标识符（URL编码的）
         
     Returns:
         ArticleDetailResponse: 资讯详情数据
@@ -98,11 +218,13 @@ async def get_article_detail(
         HTTPException: 当资讯不存在时返回404错误
     """
     try:
-        result = service.get_article_detail(post_id)
+        # 解码URL编码的post_id
+        decoded_post_id = unquote(post_id)
+        result = service.get_article_detail(decoded_post_id)
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"资讯 {post_id} 不存在"
+                detail=f"资讯 {decoded_post_id} 不存在"
             )
         return result
         
@@ -154,8 +276,10 @@ async def search_articles(
             page=page,
             limit=limit,
             source=source,
+            query=None,  # 搜索接口不使用query字段筛选
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            read_status=None  # 搜索接口不筛选已读状态
         )
         
         # 执行搜索
@@ -210,3 +334,45 @@ async def health_check():
         "timestamp": datetime.now().isoformat(),
         "version": "v1"
     }
+
+
+# 资讯详情路由（必须在最后，因为使用了 path 参数）
+@router.get(
+    "/articles/{post_id:path}",
+    response_model=ArticleDetailResponse,
+    summary="获取资讯详情",
+    description="根据URI编码的资讯ID获取详细信息，包含完整的原始数据"
+)
+async def get_article_detail(
+    post_id: str,
+    service: ArticleService = Depends(get_article_service)
+):
+    """获取资讯详情
+    
+    Args:
+        post_id: 资讯唯一标识符（URL编码的）
+        
+    Returns:
+        ArticleDetailResponse: 资讯详情数据
+        
+    Raises:
+        HTTPException: 当资讯不存在时返回404错误
+    """
+    try:
+        # 解码URL编码的post_id
+        decoded_post_id = unquote(post_id)
+        result = service.get_article_detail(decoded_post_id)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"资讯 {decoded_post_id} 不存在"
+            )
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取资讯详情失败: {str(e)}"
+        )

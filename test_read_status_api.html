@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>已读状态API测试</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #007bff;
+        }
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 5px;
+        }
+        .test-group {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-success { background-color: #28a745; }
+        .status-error { background-color: #dc3545; }
+        .status-pending { background-color: #ffc107; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>已读状态功能 API 测试</h1>
+        <div class="info">
+            <strong>测试说明：</strong>
+            <br>1. 确保后端服务已启动 (http://localhost:8000)
+            <br>2. 点击各个测试按钮验证API功能
+            <br>3. 查看响应结果和状态码
+        </div>
+        
+        <div>
+            <label>API Base URL: </label>
+            <input type="text" id="baseUrl" value="http://localhost:8000/api/v1" style="width: 300px;">
+            <button onclick="testConnection()">测试连接</button>
+        </div>
+        <div id="connectionStatus"></div>
+    </div>
+
+    <!-- 基础API测试 -->
+    <div class="container">
+        <h2>1. 基础API测试</h2>
+        
+        <div class="test-group">
+            <h3>健康检查</h3>
+            <button onclick="testHealthCheck()">测试健康检查</button>
+            <div id="healthResult"></div>
+        </div>
+
+        <div class="test-group">
+            <h3>获取资讯列表</h3>
+            <button onclick="testGetArticles()">获取全部资讯</button>
+            <button onclick="testGetArticles('read')">获取已读资讯</button>
+            <button onclick="testGetArticles('unread')">获取未读资讯</button>
+            <div id="articlesResult"></div>
+        </div>
+    </div>
+
+    <!-- 已读状态API测试 -->
+    <div class="container">
+        <h2>2. 已读状态API测试</h2>
+        
+        <div class="test-group">
+            <h3>单个文章操作</h3>
+            <div>
+                <label>文章ID: </label>
+                <input type="text" id="postId" value="article_001" placeholder="输入文章ID">
+            </div>
+            <button onclick="markAsRead()">标记为已读</button>
+            <button onclick="markAsUnread()">标记为未读</button>
+            <button onclick="getReadStatus()">查询已读状态</button>
+            <div id="singleResult"></div>
+        </div>
+
+        <div class="test-group">
+            <h3>批量操作</h3>
+            <div>
+                <label>文章ID列表（逗号分隔）: </label>
+                <input type="text" id="postIds" value="article_001,article_002,article_003" style="width: 300px;">
+            </div>
+            <button onclick="batchMarkAsRead()">批量标记已读</button>
+            <button onclick="batchMarkAsUnread()">批量标记未读</button>
+            <div id="batchResult"></div>
+        </div>
+    </div>
+
+    <!-- 集成测试 -->
+    <div class="container">
+        <h2>3. 端到端流程测试</h2>
+        
+        <div class="test-group">
+            <h3>完整流程测试</h3>
+            <button onclick="runFullWorkflowTest()">运行完整流程测试</button>
+            <div id="workflowResult"></div>
+        </div>
+    </div>
+
+    <!-- 测试结果统计 -->
+    <div class="container">
+        <h2>4. 测试结果统计</h2>
+        <div id="testSummary">
+            <p>测试统计将在测试完成后显示</p>
+        </div>
+    </div>
+
+    <script>
+        let testResults = {
+            passed: 0,
+            failed: 0,
+            total: 0
+        };
+
+        function getBaseUrl() {
+            return document.getElementById('baseUrl').value;
+        }
+
+        function logTest(name, success, response = null) {
+            testResults.total++;
+            if (success) {
+                testResults.passed++;
+            } else {
+                testResults.failed++;
+            }
+            updateTestSummary();
+            console.log(`Test: ${name}, Success: ${success}`, response);
+        }
+
+        function updateTestSummary() {
+            const summary = document.getElementById('testSummary');
+            summary.innerHTML = `
+                <div class="info">
+                    <h4>测试统计</h4>
+                    <p><span class="status-indicator status-success"></span>通过: ${testResults.passed}</p>
+                    <p><span class="status-indicator status-error"></span>失败: ${testResults.failed}</p>
+                    <p><span class="status-indicator status-pending"></span>总计: ${testResults.total}</p>
+                    <p>成功率: ${testResults.total > 0 ? ((testResults.passed / testResults.total) * 100).toFixed(1) : 0}%</p>
+                </div>
+            `;
+        }
+
+        async function makeRequest(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                const data = await response.json();
+                return {
+                    success: response.ok,
+                    status: response.status,
+                    data: data
+                };
+            } catch (error) {
+                return {
+                    success: false,
+                    status: 0,
+                    error: error.message
+                };
+            }
+        }
+
+        function displayResult(elementId, result, testName) {
+            const element = document.getElementById(elementId);
+            const isSuccess = result.success;
+            
+            logTest(testName, isSuccess, result);
+            
+            element.innerHTML = `
+                <div class="${isSuccess ? 'success' : 'error'}">
+                    <h4>${testName} ${isSuccess ? '✅ 成功' : '❌ 失败'}</h4>
+                    <p><strong>状态码:</strong> ${result.status}</p>
+                    ${result.error ? `<p><strong>错误:</strong> ${result.error}</p>` : ''}
+                    <details>
+                        <summary>查看详细响应</summary>
+                        <pre>${JSON.stringify(result.data || result.error, null, 2)}</pre>
+                    </details>
+                </div>
+            `;
+        }
+
+        // 基础测试函数
+        async function testConnection() {
+            const result = await makeRequest(`${getBaseUrl()}/health`);
+            displayResult('connectionStatus', result, '连接测试');
+        }
+
+        async function testHealthCheck() {
+            const result = await makeRequest(`${getBaseUrl()}/health`);
+            displayResult('healthResult', result, '健康检查');
+        }
+
+        async function testGetArticles(readStatus = null) {
+            let url = `${getBaseUrl()}/articles?page=1&limit=10`;
+            if (readStatus) {
+                url += `&read_status=${readStatus}`;
+            }
+            
+            const result = await makeRequest(url);
+            const testName = readStatus ? `获取${readStatus === 'read' ? '已读' : '未读'}资讯` : '获取全部资讯';
+            displayResult('articlesResult', result, testName);
+        }
+
+        // 已读状态测试函数
+        async function markAsRead() {
+            const postId = document.getElementById('postId').value;
+            const result = await makeRequest(`${getBaseUrl()}/articles/${postId}/read-status`, {
+                method: 'PUT',
+                body: JSON.stringify({ is_read: true })
+            });
+            displayResult('singleResult', result, '标记为已读');
+        }
+
+        async function markAsUnread() {
+            const postId = document.getElementById('postId').value;
+            const result = await makeRequest(`${getBaseUrl()}/articles/${postId}/read-status`, {
+                method: 'PUT',
+                body: JSON.stringify({ is_read: false })
+            });
+            displayResult('singleResult', result, '标记为未读');
+        }
+
+        async function getReadStatus() {
+            const postId = document.getElementById('postId').value;
+            const result = await makeRequest(`${getBaseUrl()}/articles/${postId}/read-status`);
+            displayResult('singleResult', result, '查询已读状态');
+        }
+
+        async function batchMarkAsRead() {
+            const postIdsText = document.getElementById('postIds').value;
+            const postIds = postIdsText.split(',').map(id => id.trim());
+            
+            const result = await makeRequest(`${getBaseUrl()}/articles/batch-read-status`, {
+                method: 'PUT',
+                body: JSON.stringify({ 
+                    post_ids: postIds, 
+                    is_read: true 
+                })
+            });
+            displayResult('batchResult', result, '批量标记已读');
+        }
+
+        async function batchMarkAsUnread() {
+            const postIdsText = document.getElementById('postIds').value;
+            const postIds = postIdsText.split(',').map(id => id.trim());
+            
+            const result = await makeRequest(`${getBaseUrl()}/articles/batch-read-status`, {
+                method: 'PUT',
+                body: JSON.stringify({ 
+                    post_ids: postIds, 
+                    is_read: false 
+                })
+            });
+            displayResult('batchResult', result, '批量标记未读');
+        }
+
+        // 完整流程测试
+        async function runFullWorkflowTest() {
+            const workflowElement = document.getElementById('workflowResult');
+            workflowElement.innerHTML = '<div class="info">正在运行完整流程测试...</div>';
+            
+            const steps = [];
+            let allSuccess = true;
+            
+            try {
+                // 步骤1: 获取文章列表
+                console.log('步骤1: 获取文章列表');
+                const articlesResult = await makeRequest(`${getBaseUrl()}/articles?page=1&limit=5`);
+                steps.push({
+                    name: '获取文章列表',
+                    success: articlesResult.success,
+                    details: articlesResult
+                });
+                allSuccess = allSuccess && articlesResult.success;
+                
+                if (articlesResult.success && articlesResult.data.data.length > 0) {
+                    const firstArticle = articlesResult.data.data[0];
+                    const testPostId = firstArticle.post_id;
+                    
+                    // 步骤2: 标记第一篇文章为已读
+                    console.log('步骤2: 标记文章为已读');
+                    const markReadResult = await makeRequest(`${getBaseUrl()}/articles/${testPostId}/read-status`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ is_read: true })
+                    });
+                    steps.push({
+                        name: '标记文章为已读',
+                        success: markReadResult.success,
+                        details: markReadResult
+                    });
+                    allSuccess = allSuccess && markReadResult.success;
+                    
+                    // 步骤3: 验证已读状态
+                    console.log('步骤3: 验证已读状态');
+                    const statusResult = await makeRequest(`${getBaseUrl()}/articles/${testPostId}/read-status`);
+                    steps.push({
+                        name: '验证已读状态',
+                        success: statusResult.success && statusResult.data.is_read === true,
+                        details: statusResult
+                    });
+                    allSuccess = allSuccess && statusResult.success && statusResult.data.is_read === true;
+                    
+                    // 步骤4: 获取已读文章列表
+                    console.log('步骤4: 获取已读文章列表');
+                    const readArticlesResult = await makeRequest(`${getBaseUrl()}/articles?read_status=read&page=1&limit=10`);
+                    steps.push({
+                        name: '获取已读文章列表',
+                        success: readArticlesResult.success,
+                        details: readArticlesResult
+                    });
+                    allSuccess = allSuccess && readArticlesResult.success;
+                    
+                    // 步骤5: 标记为未读
+                    console.log('步骤5: 标记为未读');
+                    const markUnreadResult = await makeRequest(`${getBaseUrl()}/articles/${testPostId}/read-status`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ is_read: false })
+                    });
+                    steps.push({
+                        name: '标记文章为未读',
+                        success: markUnreadResult.success,
+                        details: markUnreadResult
+                    });
+                    allSuccess = allSuccess && markUnreadResult.success;
+                } else {
+                    steps.push({
+                        name: '检查文章数据',
+                        success: false,
+                        details: { error: '没有找到文章数据进行测试' }
+                    });
+                    allSuccess = false;
+                }
+                
+            } catch (error) {
+                steps.push({
+                    name: '流程测试',
+                    success: false,
+                    details: { error: error.message }
+                });
+                allSuccess = false;
+            }
+            
+            // 显示结果
+            let resultHtml = `
+                <div class="${allSuccess ? 'success' : 'error'}">
+                    <h4>完整流程测试 ${allSuccess ? '✅ 成功' : '❌ 失败'}</h4>
+                    <p><strong>总体结果:</strong> ${allSuccess ? '所有步骤都成功' : '有步骤失败'}</p>
+                    <h5>详细步骤:</h5>
+                    <ul>
+            `;
+            
+            steps.forEach((step, index) => {
+                resultHtml += `
+                    <li>
+                        <span class="status-indicator ${step.success ? 'status-success' : 'status-error'}"></span>
+                        步骤${index + 1}: ${step.name} ${step.success ? '✅' : '❌'}
+                    </li>
+                `;
+            });
+            
+            resultHtml += `
+                    </ul>
+                    <details>
+                        <summary>查看详细结果</summary>
+                        <pre>${JSON.stringify(steps, null, 2)}</pre>
+                    </details>
+                </div>
+            `;
+            
+            workflowElement.innerHTML = resultHtml;
+            logTest('完整流程测试', allSuccess, steps);
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            updateTestSummary();
+            console.log('已读状态API测试页面已加载');
+        });
+    </script>
+</body>
+</html>

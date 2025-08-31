@@ -12,6 +12,8 @@ class Article extends Equatable {
   final DateTime collectedAt;
   final int processed;
   final Map<String, dynamic>? rawData; // 详情页专用
+  final bool isRead; // 已读状态
+  final DateTime? readAt; // 标记已读时间
   
   const Article({
     required this.postId,
@@ -24,6 +26,8 @@ class Article extends Equatable {
     required this.collectedAt,
     required this.processed,
     this.rawData,
+    this.isRead = false, // 默认未读
+    this.readAt,
   });
   
   /// 从 JSON 创建 Article 实例
@@ -39,6 +43,8 @@ class Article extends Equatable {
       collectedAt: DateTime.parse(json['collected_at'] as String),
       processed: json['processed'] as int,
       rawData: json['raw_data'] as Map<String, dynamic>?,
+      isRead: json['is_read'] as bool? ?? false,
+      readAt: json['read_at'] != null ? DateTime.parse(json['read_at'] as String) : null,
     );
   }
   
@@ -54,8 +60,41 @@ class Article extends Equatable {
       'engine': engine,
       'collected_at': collectedAt.toIso8601String(),
       'processed': processed,
+      'is_read': isRead,
+      'read_at': readAt?.toIso8601String(),
       if (rawData != null) 'raw_data': rawData,
     };
+  }
+  
+  /// 创建副本方法，用于更新已读状态
+  Article copyWith({
+    String? postId,
+    String? source,
+    String? title,
+    String? url,
+    String? description,
+    String? query,
+    String? engine,
+    DateTime? collectedAt,
+    int? processed,
+    Map<String, dynamic>? rawData,
+    bool? isRead,
+    DateTime? readAt,
+  }) {
+    return Article(
+      postId: postId ?? this.postId,
+      source: source ?? this.source,
+      title: title ?? this.title,
+      url: url ?? this.url,
+      description: description ?? this.description,
+      query: query ?? this.query,
+      engine: engine ?? this.engine,
+      collectedAt: collectedAt ?? this.collectedAt,
+      processed: processed ?? this.processed,
+      rawData: rawData ?? this.rawData,
+      isRead: isRead ?? this.isRead,
+      readAt: readAt ?? this.readAt,
+    );
   }
   
   /// 获取来源显示名称
@@ -105,5 +144,7 @@ class Article extends Equatable {
     engine,
     collectedAt,
     processed,
+    isRead,
+    readAt,
   ];
 }

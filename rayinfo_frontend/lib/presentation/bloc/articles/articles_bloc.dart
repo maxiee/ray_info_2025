@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/usecases/get_articles.dart';
+import '../../../data/models/read_status_models.dart';
 import 'articles_event.dart';
 import 'articles_state.dart';
 
@@ -11,6 +12,8 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
     on<LoadArticles>(_onLoadArticles);
     on<RefreshArticles>(_onRefreshArticles);
     on<LoadMoreArticles>(_onLoadMoreArticles);
+    on<UpdateArticleReadStatus>(_onUpdateArticleReadStatus); // 新增
+    on<UpdateFilters>(_onUpdateFilters); // 新增
   }
   
   /// 处理加载资讯事件
@@ -39,6 +42,7 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
         query: event.query,
         startDate: event.startDate,
         endDate: event.endDate,
+        readStatus: event.readStatus, // 新增已读状态参数
       );
       
       if (event.page == 1 || event.isRefresh) {
@@ -50,6 +54,7 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
           currentQuery: event.query,
           currentStartDate: event.startDate,
           currentEndDate: event.endDate,
+          currentReadStatus: event.readStatus ?? ReadStatusFilter.all,
         ));
       } else if (state is ArticlesLoaded) {
         // 加载更多，追加到现有列表
@@ -63,6 +68,7 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
           currentQuery: event.query,
           currentStartDate: event.startDate,
           currentEndDate: event.endDate,
+          currentReadStatus: event.readStatus ?? currentState.currentReadStatus,
         ));
       }
     } catch (e) {
@@ -81,6 +87,7 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
       query: event.query,
       startDate: event.startDate,
       endDate: event.endDate,
+      readStatus: event.readStatus,
       isRefresh: true,
     ));
   }
@@ -104,7 +111,87 @@ class ArticlesBloc extends Bloc<ArticlesEvent, ArticlesState> {
         query: currentState.currentQuery,
         startDate: currentState.currentStartDate,
         endDate: currentState.currentEndDate,
+        readStatus: currentState.currentReadStatus,
       ));
     }
+  }
+  
+  /// 处理更新文章已读状态事件
+  void _onUpdateArticleReadStatus(
+    UpdateArticleReadStatus event,
+    Emitter<ArticlesState> emit,
+  ) {
+    if (state is ArticlesLoaded) {
+      final currentState = state as ArticlesLoaded;
+      
+      // 查找并更新对应的文章
+      final updatedArticles = currentState.articles.map((article) {
+        if (article.postId == event.postId) {
+          return article.copyWith(
+            isRead: event.isRead,
+            readAt: event.readAt,
+          );
+        }
+        return article;
+      }).toList();
+      
+      emit(currentState.copyWith(articles: updatedArticles));
+    }
+  }
+  
+  /// 处理更新筛选条件事件
+  void _onUpdateFilters(
+    UpdateFilters event,
+    Emitter<ArticlesState> emit,
+  ) {
+    if (state is ArticlesLoaded) {
+      final currentState = state as ArticlesLoaded;
+      
+      // 检查筛选条件是否发生变化
+      final hasSourceChanged = event.source != currentState.currentSource;
+      final hasReadStatusChanged = event.readStatus != null && 
+          event.readStatus != currentState.currentReadStatus;
+      final hasDateChanged = event.startDate != currentState.currentStartDate ||
+          event.endDate != currentState.currentEndDate;
+      
+      if (hasSourceChanged || hasReadStatusChanged || hasDateChanged) {
+        // 筛选条件发生变化，重新加载数据
+        add(LoadArticles(
+          page: 1,
+          source: event.source ?? currentState.currentSource,
+          readStatus: event.readStatus ?? currentState.currentReadStatus,
+          startDate: event.startDate ?? currentState.currentStartDate,
+          endDate: event.endDate ?? currentState.currentEndDate,
+        ));
+      }
+    } else {
+      // 如果当前状态不是ArticlesLoaded，直接加载
+      add(LoadArticles(
+        page: 1,
+        source: event.source,
+        readStatus: event.readStatus,
+        startDate: event.startDate,
+        endDate: event.endDate,
+      ));
+    }
+  }
+  
+  /// 便捷方法：根据已读状态筛选
+  void filterByReadStatus(ReadStatusFilter readStatus) {
+    add(UpdateFilters(readStatus: readStatus));
+  }
+  
+  /// 便捷方法：根据来源筛选
+  void filterBySource(String? source) {
+    add(UpdateFilters(source: source));
+  }
+  
+  /// 便捷方法：更新文章状态
+  void updateArticleStatus(String postId, bool isRead, DateTime? readAt) {
+    add(UpdateArticleReadStatus(
+      postId: postId,
+      isRead: isRead,
+      readAt: readAt,
+    ));
   }
 }

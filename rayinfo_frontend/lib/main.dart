@@ -9,6 +9,7 @@ import 'domain/usecases/get_articles.dart';
 import 'domain/usecases/search_articles.dart';
 import 'presentation/bloc/articles/articles_bloc.dart';
 import 'presentation/bloc/search/search_bloc.dart';
+import 'presentation/bloc/read_status/read_status_bloc.dart';
 import 'presentation/pages/home_page.dart';
 import 'presentation/pages/search_page.dart';
 
@@ -35,6 +36,9 @@ class MyApp extends StatelessWidget {
         ),
         BlocProvider(
           create: (context) => SearchBloc(searchArticlesUseCase),
+        ),
+        BlocProvider(
+          create: (context) => ReadStatusBloc(repository: articleRepository),
         ),
       ],
       child: MaterialApp(
