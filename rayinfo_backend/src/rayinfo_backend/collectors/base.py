@@ -23,7 +23,33 @@ class RawEvent:
 
 
 class CollectorError(Exception):
+    """采集器基础异常类"""
+
     pass
+
+
+class QuotaExceededException(CollectorError):
+    """API 配额超限异常
+
+    当采集器检测到 API 配额已用完时抛出此异常。
+    调度器捕获此异常后会:
+    1. 不更新执行状态记录 (保持上次成功执行的时间戳)
+    2. 重新调度到 24 小时后执行
+
+    Attributes:
+        api_type: API 类型 (如 'google', 'twitter' 等)
+        reset_time: 配额重置时间 (Unix 时间戳)，可选
+        message: 异常消息
+    """
+
+    def __init__(
+        self, api_type: str, reset_time: float | None = None, message: str | None = None
+    ):
+        self.api_type = api_type
+        self.reset_time = reset_time
+        if message is None:
+            message = f"{api_type} API quota exceeded"
+        super().__init__(message)
 
 
 class BaseCollector(ABC):

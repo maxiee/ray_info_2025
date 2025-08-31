@@ -5,7 +5,7 @@ import json
 import logging
 from typing import AsyncIterator, List, Dict, Any, Optional
 
-from ..base import ParameterizedCollector, RawEvent
+from ..base import ParameterizedCollector, RawEvent, QuotaExceededException
 from ...config.settings import get_settings
 
 logger = logging.getLogger("rayinfo.collector.mes")
@@ -88,12 +88,19 @@ class MesCollector(ParameterizedCollector):
         pass
 
     def _choose_engine(self, query: str) -> str:
-        """预留搜索引擎选择策略.
+        """选择搜索引擎策略.
 
-        当前直接返回 "duckduckgo". 未来可：
+        优先返回配置中指定的引擎，如果配置为 Google 且未超限则使用 Google。
+        未来可扩展：
         1. 若 Google API 配额剩余 -> 返回 google
         2. 否则 fallback 到 duckduckgo / bing / searx
         """
+        # 优先使用配置中指定的引擎
+        configured_engine = self._engine_map.get(query)
+        if configured_engine:
+            return configured_engine
+
+        # 默认使用 duckduckgo
         return "duckduckgo"
 
     async def _run_mes(
@@ -148,13 +155,39 @@ class MesCollector(ParameterizedCollector):
                 # 记录 rate_limit 信息（如果存在）
                 if "rate_limit" in data:
                     rate_limit = data["rate_limit"]
+                    limit_exceeded = rate_limit.get("limit_exceeded", False)
+                    requests_used = rate_limit.get("requests_used", 0)
+                    daily_limit = rate_limit.get("daily_limit", 0)
+                    requests_remaining = rate_limit.get("requests_remaining", 0)
+
                     logger.info(
                         "Search API rate limit info - used: %s/%s, remaining: %s, limit_exceeded: %s",
-                        rate_limit.get("requests_used", "unknown"),
-                        rate_limit.get("daily_limit", "unknown"),
-                        rate_limit.get("requests_remaining", "unknown"),
-                        rate_limit.get("limit_exceeded", "unknown"),
+                        requests_used,
+                        daily_limit,
+                        requests_remaining,
+                        limit_exceeded,
                     )
+
+                    # 检查是否达到 Google API 限额
+                    if limit_exceeded and engine.lower() == "google":
+                        # 计算下一次重置时间（24小时后）
+                        import time
+
+                        reset_time = time.time() + 24 * 3600  # 24小时后
+
+                        logger.warning(
+                            "Google API daily quota exceeded - used: %s/%s, engine: %s",
+                            requests_used,
+                            daily_limit,
+                            engine,
+                        )
+
+                        # 抛出配额超限异常，调度器会处理重调度逻辑
+                        raise QuotaExceededException(
+                            api_type="google",
+                            reset_time=reset_time,
+                            message=f"Google Search API daily quota exceeded (used {requests_used}/{daily_limit})",
+                        )
                 return results
             # 兼容旧格式（直接是数组）
             elif isinstance(data, list):

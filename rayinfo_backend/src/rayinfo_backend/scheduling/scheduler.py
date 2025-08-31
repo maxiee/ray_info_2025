@@ -8,7 +8,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 
-from ..collectors.base import registry, BaseCollector, ParameterizedCollector
+from ..collectors.base import (
+    registry,
+    BaseCollector,
+    ParameterizedCollector,
+    QuotaExceededException,
+)
 from ..pipelines import Pipeline, DedupStage, SqlitePersistStage
 from ..config.settings import get_settings
 from ..utils.instance_id import instance_manager
@@ -129,6 +134,7 @@ class SchedulerAdapter:
             param (str, optional): 参数化采集器的参数
         """
         start_time = time.time()
+        should_update_state = True  # 标记是否应该更新状态
 
         try:
             logger.info(
@@ -164,6 +170,46 @@ class SchedulerAdapter:
                     param,
                 )
 
+        except QuotaExceededException as e:
+            # API 配额超限异常的特殊处理
+            logger.warning(
+                "[run] API配额超限 collector=%s param=%s api_type=%s reset_time=%s - 不更新状态，重调度到24小时后",
+                collector.name,
+                param,
+                e.api_type,
+                e.reset_time,
+            )
+
+            # 计算重调度时间（24小时后，或根据 reset_time）
+            retry_delay = 24 * 3600  # 默认24小时
+            if e.reset_time and e.reset_time > time.time():
+                # 使用 API 提供的重置时间
+                retry_delay = e.reset_time - time.time()
+                logger.info(
+                    "[run] 使用API提供的重置时间 delay=%.1f小时", retry_delay / 3600
+                )
+
+            # 创建延迟重试任务
+            retry_time = time.time() + retry_delay
+            retry_job_id = f"{collector.name}:{param}:quota_retry:{int(time.time())}"
+
+            self.scheduler.add_job(
+                self.run_collector_with_state_update,
+                trigger=DateTrigger(run_date=datetime.fromtimestamp(retry_time)),
+                args=[collector, param],
+                id=retry_job_id,
+                replace_existing=True,
+            )
+
+            logger.info(
+                "[run] 已安排配额重试任务 job_id=%s retry_in=%.1f小时",
+                retry_job_id,
+                retry_delay / 3600,
+            )
+
+            # 标记不更新状态
+            should_update_state = False
+
         except Exception as e:
             logger.error(
                 "[run] 采集器执行失败 collector=%s param=%s error=%s",
@@ -173,19 +219,26 @@ class SchedulerAdapter:
             )
             raise
         finally:
-            # 无论成功还是失败，都更新执行状态
-            try:
-                self.state_manager.update_execution_time(
-                    collector_name=collector.name,
-                    param_key=param,  # 直接传递，状态管理器会处理None
-                    timestamp=start_time,
-                )
-            except Exception as e:
-                logger.warning(
-                    "更新采集器状态失败 collector=%s param=%s error=%s",
+            # 只有在正常执行或非配额异常时才更新状态
+            if should_update_state:
+                try:
+                    self.state_manager.update_execution_time(
+                        collector_name=collector.name,
+                        param_key=param,  # 直接传递，状态管理器会处理None
+                        timestamp=start_time,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "更新采集器状态失败 collector=%s param=%s error=%s",
+                        collector.name,
+                        param,
+                        e,
+                    )
+            else:
+                logger.info(
+                    "[run] 由于配额异常，跳过状态更新 collector=%s param=%s",
                     collector.name,
                     param,
-                    e,
                 )
 
     def add_collector_job_with_state(self, collector: BaseCollector) -> list[str]:
