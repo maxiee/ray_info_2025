@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import random
 from typing import AsyncIterator
-from ..base import SimpleCollector, RawEvent
+from ..base import BaseCollector, RawEvent
 
 
-class WeiboHomeCollector(SimpleCollector):
+class WeiboHomeCollector(BaseCollector):
     name = "weibo.home"
 
     @property

@@ -17,7 +17,7 @@ import logging
 import pkgutil
 from types import ModuleType
 
-from .base import BaseCollector, SimpleCollector, ParameterizedCollector, registry
+from .base import BaseCollector, registry
 
 logger = logging.getLogger("rayinfo.collectors")
 
@@ -49,8 +49,8 @@ def discover_and_register(package_root: str = __name__):
             # 跳过非 BaseCollector 子类和抽象基类
             if not issubclass(obj, BaseCollector):
                 continue
-            # 跳过抽象基类：BaseCollector, SimpleCollector, ParameterizedCollector
-            if obj in (BaseCollector, SimpleCollector, ParameterizedCollector):
+            # 跳过抽象基类：BaseCollector
+            if obj in (BaseCollector,):
                 continue
             # 跳过其他抽象类（通过检查是否有未实现的抽象方法）
             if getattr(obj, "__abstractmethods__", None):

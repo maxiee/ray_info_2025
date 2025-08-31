@@ -17,8 +17,7 @@ sys.path.insert(0, str(project_root / "src"))
 
 from rayinfo_backend.collectors.base import (
     RawEvent,
-    SimpleCollector,
-    ParameterizedCollector,
+    BaseCollector,
 )
 from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
 from rayinfo_backend.pipelines import DedupStage, PersistStage, Pipeline
@@ -27,11 +26,14 @@ from rayinfo_backend.config.validators import validate_settings
 from rayinfo_backend.utils.instance_id import instance_manager, InstanceStatus
 
 
-class TestSimpleCollector(SimpleCollector):
+class TestSimpleCollector(BaseCollector):
     """测试用的简单采集器"""
 
     name = "test.simple"
-    default_interval_seconds = 5
+
+    @property
+    def default_interval_seconds(self) -> int:
+        return 5
 
     async def fetch(self, param=None):
         # 模拟采集数据
@@ -43,11 +45,14 @@ class TestSimpleCollector(SimpleCollector):
             )
 
 
-class TestParameterizedCollector(ParameterizedCollector):
+class TestParameterizedCollector(BaseCollector):
     """测试用的参数化采集器"""
 
     name = "test.parameterized"
-    default_interval_seconds = 10
+
+    @property
+    def default_interval_seconds(self) -> int:
+        return 10
 
     def list_param_jobs(self):
         return [

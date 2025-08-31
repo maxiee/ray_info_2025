@@ -11,7 +11,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from ..collectors.base import (
     BaseCollector,
-    ParameterizedCollector,
     QuotaExceededException,
     registry,
 )
@@ -255,9 +254,10 @@ class SchedulerAdapter:
         job_ids = []
 
         try:
-            if isinstance(collector, ParameterizedCollector):
+            # 检查是否为参数化采集器（有 list_param_jobs 方法且返回非空值）
+            param_jobs = getattr(collector, "list_param_jobs", lambda: None)()
+            if param_jobs is not None:
                 # 参数化采集器：为每个参数创建独立的状态感知调度
-                param_jobs = collector.list_param_jobs()
                 for param_key, interval in param_jobs:
                     # 确保 interval 不为 None
                     if interval is None:

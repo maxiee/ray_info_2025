@@ -5,13 +5,13 @@ import json
 import logging
 from typing import AsyncIterator, List, Dict, Any, Optional
 
-from ..base import ParameterizedCollector, RawEvent, QuotaExceededException
+from ..base import BaseCollector, RawEvent, QuotaExceededException
 from ...config.settings import get_settings
 
 logger = logging.getLogger("rayinfo.collector.mes")
 
 
-class MesCollector(ParameterizedCollector):
+class MesCollector(BaseCollector):
     """使用外部 `mes` CLI 进行多搜索引擎查询的采集器.
 
     当前实现：

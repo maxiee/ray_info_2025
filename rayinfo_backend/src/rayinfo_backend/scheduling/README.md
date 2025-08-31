@@ -26,7 +26,7 @@
 
 - 新增 Collector：
   - 普通：实现 `BaseCollector`，设置 `default_interval_seconds`。
-  - 参数化：实现 `ParameterizedCollector`，实现 `list_param_jobs()` 返回 (param, interval) 序列。
+  - 参数化：实现 `BaseCollector`，实现 `list_param_jobs()` 返回 (param, interval) 序列。
 - 新增调度行为：
   - 在 `SchedulerAdapter` 内部扩展。历史的 `strategies.py` 已移除，不再支持在该文件中新增策略。
 
