@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
 
@@ -54,6 +55,7 @@ class SchedulerAdapter:
         数据库路径从配置文件中读取。同时初始化策略注册器、任务工厂和状态管理器。
         """
         # 负责定时触发任务（异步版，能直接跑协程），自动闹钟面板
+        # 使用默认设置，但设置misfire_grace_time来避免任务堆积
         self.scheduler = AsyncIOScheduler()
 
         # 从配置中获取存储设置
@@ -199,6 +201,8 @@ class SchedulerAdapter:
                 args=[collector, param],
                 id=retry_job_id,
                 replace_existing=True,
+                max_instances=1,  # 限制同一个任务最多同时运行1个实例
+                coalesce=True,  # 如果有多个待执行实例，合并为一个
             )
 
             logger.info(
@@ -272,6 +276,17 @@ class SchedulerAdapter:
                         )
                         continue
 
+                    # 注册实例到实例管理器
+                    instance_id = instance_manager.register_instance(
+                        collector, param_key
+                    )
+                    logger.debug(
+                        "注册参数化采集器实例 collector=%s param=%s instance_id=%s",
+                        collector.name,
+                        param_key,
+                        instance_id,
+                    )
+
                     # 计算初始执行时间
                     next_run_time = self.state_manager.calculate_next_run_time(
                         collector_name=collector.name,
@@ -294,6 +309,8 @@ class SchedulerAdapter:
                             args=[collector, param_key],
                             id=initial_job_id,
                             replace_existing=True,
+                            max_instances=1,  # 限制同一个任务最多同时运行1个实例
+                            coalesce=True,  # 如果有多个待执行实例，合并为一个
                         )
                         job_ids.append(initial_job_id)
 
@@ -312,6 +329,8 @@ class SchedulerAdapter:
                         args=[collector, param_key],
                         id=periodic_job_id,
                         replace_existing=True,
+                        max_instances=1,  # 限制同一个任务最多同时运行1个实例
+                        coalesce=True,  # 如果有多个待执行实例，合并为一个
                     )
                     job_ids.append(periodic_job_id)
 
@@ -330,6 +349,14 @@ class SchedulerAdapter:
                         collector.name,
                     )
                     interval = 60
+
+                # 注册实例到实例管理器
+                instance_id = instance_manager.register_instance(collector, None)
+                logger.debug(
+                    "注册普通采集器实例 collector=%s instance_id=%s",
+                    collector.name,
+                    instance_id,
+                )
 
                 # 计算初始执行时间
                 next_run_time = self.state_manager.calculate_next_run_time(
@@ -353,6 +380,8 @@ class SchedulerAdapter:
                         args=[collector],
                         id=initial_job_id,
                         replace_existing=True,
+                        max_instances=1,  # 限制同一个任务最多同时运行1个实例
+                        coalesce=True,  # 如果有多个待执行实例，合并为一个
                     )
                     job_ids.append(initial_job_id)
 
@@ -370,6 +399,8 @@ class SchedulerAdapter:
                     args=[collector],
                     id=periodic_job_id,
                     replace_existing=True,
+                    max_instances=1,  # 限制同一个任务最多同时运行1个实例
+                    coalesce=True,  # 如果有多个待执行实例，合并为一个
                 )
                 job_ids.append(periodic_job_id)
 
