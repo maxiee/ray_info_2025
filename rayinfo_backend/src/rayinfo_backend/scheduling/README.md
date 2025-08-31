@@ -11,7 +11,7 @@
   - 负责：将 Collector 注册为调度任务、执行一次任务、状态更新和配额重试。
 - `state_manager.py`：采集器执行状态的持久化（断点续传）。
   - 负责：最后一次执行时间、执行次数、是否应立即执行、下次执行时间计算等。
-- `strategies.py`：原有策略模式实现（保留以兼容/参考）。当前核心路径使用 `SchedulerAdapter` 的状态感知调度。
+- （已移除）`strategies.py`：原有策略模式实现已在 2025-08 移除；请统一使用 `SchedulerAdapter` 的状态感知调度。
 - `types.py`：调度领域通用类型与工具（例如 JobKind、统一的 `make_job_id`）。
 
 ## 关键概念
@@ -28,20 +28,19 @@
   - 普通：实现 `BaseCollector`，设置 `default_interval_seconds`。
   - 参数化：实现 `ParameterizedCollector`，实现 `list_param_jobs()` 返回 (param, interval) 序列。
 - 新增调度行为：
-  - 在 `SchedulerAdapter` 内部扩展，或在 `strategies.py` 新增策略并挂入注册表。
+  - 在 `SchedulerAdapter` 内部扩展。历史的 `strategies.py` 已移除，不再支持在该文件中新增策略。
 
 ## 弃用与迁移
 
-`strategies.py` 模块（`StrategyRegistry`、`JobFactory`、`*Strategy` 等）已标注为弃用，推荐直接使用 `SchedulerAdapter` 的状态感知接口：
+`strategies.py` 模块（`StrategyRegistry`、`JobFactory`、`*Strategy` 等）在 2025-08 已正式移除。请直接使用 `SchedulerAdapter` 的状态感知接口：
 
 - 单个采集器：`SchedulerAdapter.add_collector_job_with_state(collector)`
 - 批量加载：`SchedulerAdapter.load_all_collectors()`
 
 迁移步骤建议：
-1. 移除对 `StrategyRegistry` 与 `JobFactory` 的直接依赖；
-2. 在原本注册任务的地方，替换为通过 `SchedulerAdapter` 添加；
-3. 对于参数化采集器，维持 `list_param_jobs()` 返回 `(param, interval)` 的约定即可，其余由调度器适配处理；
-4. 若必须临时保留策略模式，注意该模块导入时会产生 `DeprecationWarning`，请尽快迁移。
+1. 移除对 `StrategyRegistry`、`JobFactory`、`SimpleJobStrategy`、`ParameterizedJobStrategy` 等所有类型的导入；
+2. 在原本注册任务的地方，替换为通过 `SchedulerAdapter.add_collector_job_with_state()` 添加；
+3. 对于参数化采集器，维持 `list_param_jobs()` 返回 `(param, interval)` 的约定即可，其余由调度器适配处理。
 
 ## 约定
 

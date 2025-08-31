@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional, Sequence, Any
+from typing import Optional, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
@@ -20,12 +20,8 @@ from ..pipelines import DedupStage, Pipeline, SqlitePersistStage
 from ..utils.instance_id import instance_manager
 from .state_manager import CollectorStateManager
 from .types import JobKind, make_job_id
-from .strategies import (
-    StrategyRegistry,
-    create_default_strategy_registry,
-    SimpleJobFactory,
-    ParameterizedJobFactory,
-)
+
+# 2025-08: 移除对已弃用 strategies 模块的依赖
 
 logger = logging.getLogger("rayinfo.scheduler")
 
@@ -76,19 +72,7 @@ class SchedulerAdapter:
             settings.storage.db_path
         )
 
-        # 向后兼容的策略注册器与任务工厂（当前核心流程未直接依赖，但保留对外属性）
-        self.strategy_registry: StrategyRegistry = create_default_strategy_registry()
-
-        async def _simple_runner(collector: BaseCollector) -> None:
-            await self.run_collector_with_state_update(collector, None)
-
-        self.simple_job_factory = SimpleJobFactory(_simple_runner)
-
-        def _pipeline_runner(events: Sequence[Any]) -> None:
-            # Pipeline 当前以批处理方式消费事件
-            self.pipeline.run(list(events))
-
-        self.param_job_factory = ParameterizedJobFactory(_pipeline_runner)
+        # 注意：历史上的策略模式与任务工厂已删除，统一改为状态感知调度
 
         logger.info(f"调度器初始化完成，数据库路径: {settings.storage.db_path}")
 

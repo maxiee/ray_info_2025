@@ -180,7 +180,12 @@
 ## 📁 重构文件清单
 
 ### 新增文件
-1. `rayinfo_backend/src/rayinfo_backend/scheduling/strategies.py` - 调度策略实现
+1. `rayinfo_backend/src/rayinfo_backend/scheduling/strategies.py` - 调度策略实现（2025-08 已移除）。
+	 - 现已统一使用 `SchedulerAdapter` 的状态感知调度；如果你的代码还引用 `StrategyRegistry`/`JobFactory`，
+		 请改为：
+		 - from `rayinfo_backend.scheduling` import `SchedulerAdapter`
+		 - 调用 `SchedulerAdapter.add_collector_job_with_state()` 或 `load_all_collectors()`
+	 - 为防止误用，`strategies.py` 作为占位会在导入时抛出明确的 ImportError。
 2. `rayinfo_backend/src/rayinfo_backend/config/loaders.py` - 配置加载器
 3. `rayinfo_backend/src/rayinfo_backend/config/validators.py` - 配置验证器
 4. `test_refactoring.py` - 重构验证测试
