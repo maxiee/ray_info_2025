@@ -362,7 +362,7 @@ class CollectorStateManager:
             deleted_count = (
                 session.query(CollectorExecutionState)
                 .filter(CollectorExecutionState.updated_at < cutoff_time)
-                .delete()
+                .delete(synchronize_session=False)
             )
 
             session.commit()

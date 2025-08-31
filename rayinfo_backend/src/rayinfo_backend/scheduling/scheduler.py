@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, Sequence, Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
@@ -51,8 +51,14 @@ class SchedulerAdapter:
         数据库路径从配置文件中读取。同时初始化策略注册器、任务工厂和状态管理器。
         """
         # 负责定时触发任务（异步版，能直接跑协程），自动闹钟面板
-        # 使用默认设置，但设置misfire_grace_time来避免任务堆积
-        self.scheduler = AsyncIOScheduler()
+        # 设置合理的默认 job 配置，避免误触发堆积
+        self.scheduler = AsyncIOScheduler(
+            job_defaults={
+                "coalesce": True,  # 多个待执行实例合并
+                "max_instances": 1,  # 同一任务最多并发1
+                "misfire_grace_time": 300,  # 允许最多5分钟的错过执行宽限
+            }
+        )
 
         # 从配置中获取存储设置
         settings = get_settings()
@@ -78,8 +84,9 @@ class SchedulerAdapter:
 
         self.simple_job_factory = SimpleJobFactory(_simple_runner)
 
-        def _pipeline_runner(events: list) -> None:
-            self.pipeline.run(events)
+        def _pipeline_runner(events: Sequence[Any]) -> None:
+            # Pipeline 当前以批处理方式消费事件
+            self.pipeline.run(list(events))
 
         self.param_job_factory = ParameterizedJobFactory(_pipeline_runner)
 
@@ -184,21 +191,26 @@ class SchedulerAdapter:
                 logger.info(
                     "[run] 使用API提供的重置时间 delay=%.1f小时", retry_delay / 3600
                 )
+            # 防御式：避免出现负延迟
+            if retry_delay < 0:
+                retry_delay = 0
 
             # 创建延迟重试任务
             retry_time = time.time() + retry_delay
-            retry_job_id = make_job_id(
-                collector.name, param, JobKind.QuotaRetry, suffix=str(int(time.time()))
-            )
+            # 使用稳定的重试任务 ID，确保仅存在一个挂起的重试任务（若再次触发会替换）
+            retry_job_id = make_job_id(collector.name, param, JobKind.QuotaRetry)
 
             self.scheduler.add_job(
                 self.run_collector_with_state_update,
-                trigger=DateTrigger(run_date=datetime.fromtimestamp(retry_time)),
+                trigger=DateTrigger(
+                    run_date=datetime.fromtimestamp(
+                        retry_time, tz=self.scheduler.timezone or timezone.utc
+                    )
+                ),
                 args=[collector, param],
                 id=retry_job_id,
                 replace_existing=True,
-                max_instances=1,  # 限制同一个任务最多同时运行1个实例
-                coalesce=True,  # 如果有多个待执行实例，合并为一个
+                # max_instances/coalesce 由 job_defaults 统一控制
             )
 
             logger.info(
@@ -302,13 +314,15 @@ class SchedulerAdapter:
                         self.scheduler.add_job(
                             self.run_collector_with_state_update,
                             trigger=DateTrigger(
-                                run_date=datetime.fromtimestamp(next_run_time)
+                                run_date=datetime.fromtimestamp(
+                                    next_run_time,
+                                    tz=self.scheduler.timezone or timezone.utc,
+                                )
                             ),
                             args=[collector, param_key],
                             id=initial_job_id,
                             replace_existing=True,
-                            max_instances=1,  # 限制同一个任务最多同时运行1个实例
-                            coalesce=True,  # 如果有多个待执行实例，合并为一个
+                            # 统一由 job_defaults 控制并发/合并
                         )
                         job_ids.append(initial_job_id)
 
@@ -329,8 +343,7 @@ class SchedulerAdapter:
                         args=[collector, param_key],
                         id=periodic_job_id,
                         replace_existing=True,
-                        max_instances=1,  # 限制同一个任务最多同时运行1个实例
-                        coalesce=True,  # 如果有多个待执行实例，合并为一个
+                        # 统一由 job_defaults 控制并发/合并
                     )
                     job_ids.append(periodic_job_id)
 
@@ -375,13 +388,15 @@ class SchedulerAdapter:
                     self.scheduler.add_job(
                         self.run_collector_with_state_update,
                         trigger=DateTrigger(
-                            run_date=datetime.fromtimestamp(next_run_time)
+                            run_date=datetime.fromtimestamp(
+                                next_run_time,
+                                tz=self.scheduler.timezone or timezone.utc,
+                            )
                         ),
                         args=[collector],
                         id=initial_job_id,
                         replace_existing=True,
-                        max_instances=1,  # 限制同一个任务最多同时运行1个实例
-                        coalesce=True,  # 如果有多个待执行实例，合并为一个
+                        # 统一由 job_defaults 控制并发/合并
                     )
                     job_ids.append(initial_job_id)
 
@@ -399,8 +414,7 @@ class SchedulerAdapter:
                     args=[collector],
                     id=periodic_job_id,
                     replace_existing=True,
-                    max_instances=1,  # 限制同一个任务最多同时运行1个实例
-                    coalesce=True,  # 如果有多个待执行实例，合并为一个
+                    # 统一由 job_defaults 控制并发/合并
                 )
                 job_ids.append(periodic_job_id)
 
