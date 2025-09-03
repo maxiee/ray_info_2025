@@ -8,6 +8,7 @@ from typing import AsyncIterator, List, Dict, Any, Optional
 
 from ..base import BaseCollector, RawEvent, QuotaExceededException
 from ...config.settings import get_settings
+from .mes_executor import execute_mes_command
 
 logger = logging.getLogger("rayinfo.collector.mes")
 
@@ -109,6 +110,9 @@ class MesCollector(BaseCollector):
     ) -> list[dict[str, Any]]:
         """调用 mes CLI 并解析 JSON 输出.
 
+        现在使用 mes_executor 模块提供的协程安全执行机制，
+        确保同一时间只有一个 mes 命令在执行。
+
         支持新的 JSON 格式: {"results": [...], "count": N, "rate_limit": {...}}
         兼容旧的 JSON 格式: [result1, result2, ...]
         会记录 API 使用配额信息以供监控。
@@ -117,89 +121,7 @@ class MesCollector(BaseCollector):
         - 非 0 退出码: 记录日志并返回空列表
         - JSON 解析失败: 记录日志返回空列表
         """
-        # 组装命令
-        cmd = [
-            "mes",
-            "search",
-            query,
-            "--engine",
-            engine,
-            "--output",
-            "json",
-        ]
-        # 添加时间范围参数（如果指定）
-        if time_range:
-            cmd.extend(["--time", time_range])
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            logger.warning(
-                "mes command failed rc=%s engine=%s query=%s stderr=%s",
-                proc.returncode,
-                engine,
-                query,
-                stderr.decode(errors="ignore"),
-            )
-            return []
-        try:
-            data = json.loads(stdout.decode())
-            # 适配新的 JSON 格式：{"results": [...], "count": N, "rate_limit": {...}}
-            if isinstance(data, dict) and "results" in data:
-                results = data["results"]
-                if not isinstance(results, list):
-                    logger.warning("unexpected mes results type: %s", type(results))
-                    return []
-                # 记录 rate_limit 信息（如果存在）
-                if "rate_limit" in data:
-                    rate_limit = data["rate_limit"]
-                    limit_exceeded = rate_limit.get("limit_exceeded", False)
-                    requests_used = rate_limit.get("requests_used", 0)
-                    daily_limit = rate_limit.get("daily_limit", 0)
-                    requests_remaining = rate_limit.get("requests_remaining", 0)
-
-                    logger.info(
-                        "Search API rate limit info - used: %s/%s, remaining: %s, limit_exceeded: %s",
-                        requests_used,
-                        daily_limit,
-                        requests_remaining,
-                        limit_exceeded,
-                    )
-
-                    # 检查是否达到 Google API 限额
-                    if limit_exceeded and engine.lower() == "google":
-                        # 计算下一次重置时间（24小时后）
-                        import time
-
-                        reset_time = time.time() + 24 * 3600  # 24小时后
-
-                        logger.warning(
-                            "Google API daily quota exceeded - used: %s/%s, engine: %s",
-                            requests_used,
-                            daily_limit,
-                            engine,
-                        )
-
-                        # 抛出配额超限异常，调度器会处理重调度逻辑
-                        raise QuotaExceededException(
-                            api_type="google",
-                            reset_time=reset_time,
-                            message=f"Google Search API daily quota exceeded (used {requests_used}/{daily_limit})",
-                        )
-                return results
-            # 兼容旧格式（直接是数组）
-            elif isinstance(data, list):
-                logger.info("Using legacy mes output format (direct array)")
-                return data
-            else:
-                logger.warning("unexpected mes output format: %s", type(data))
-                return []
-        except json.JSONDecodeError as e:  # pragma: no cover - 解析异常日志
-            logger.error("parse mes json failed query=%s error=%s", query, e)
-            return []
+        return await execute_mes_command(query, engine, time_range)
 
     async def fetch(self, param=None) -> AsyncIterator[RawEvent]:  # noqa: D401
         """执行搜索任务并返回结果事件。
