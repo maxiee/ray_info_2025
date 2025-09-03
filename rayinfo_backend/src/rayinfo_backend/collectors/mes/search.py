@@ -105,24 +105,6 @@ class MesCollector(BaseCollector):
         # 默认使用 duckduckgo
         return "duckduckgo"
 
-    async def _run_mes(
-        self, query: str, engine: str, time_range: Optional[str] = None
-    ) -> list[dict[str, Any]]:
-        """调用 mes CLI 并解析 JSON 输出.
-
-        现在使用 mes_executor 模块提供的协程安全执行机制，
-        确保同一时间只有一个 mes 命令在执行。
-
-        支持新的 JSON 格式: {"results": [...], "count": N, "rate_limit": {...}}
-        兼容旧的 JSON 格式: [result1, result2, ...]
-        会记录 API 使用配额信息以供监控。
-
-        失败处理策略：
-        - 非 0 退出码: 记录日志并返回空列表
-        - JSON 解析失败: 记录日志返回空列表
-        """
-        return await execute_mes_command(query, engine, time_range)
-
     async def fetch(self, param=None) -> AsyncIterator[RawEvent]:  # noqa: D401
         """执行搜索任务并返回结果事件。
 
@@ -159,7 +141,7 @@ class MesCollector(BaseCollector):
         )
 
         # 执行搜索
-        results = await self._run_mes(query, engine, time_range)
+        results = await execute_mes_command(query, engine, time_range)
 
         for item in results:
             # 结果字段: title, url, description, engine
