@@ -73,6 +73,68 @@ class SchedulerAdapter:
 
         logger.info(f"调度器初始化完成，数据库路径: {settings.storage.db_path}")
 
+    def _add_scheduler_job(
+        self,
+        func: Any,
+        trigger: Any,
+        args: Optional[list] = None,
+        job_id: Optional[str] = None,
+        replace_existing: bool = True,
+        **kwargs,
+    ) -> str:
+        """统一的调度任务添加方法。
+
+        所有需要添加调度任务的操作都必须通过此方法，确保调度配置的一致性和可维护性。
+        该方法封装了 APScheduler 的 add_job 调用，统一处理默认参数和错误处理。
+
+        Args:
+            func: 要调度的函数或方法
+            trigger: 触发器（DateTrigger、IntervalTrigger等）
+            args: 传递给函数的参数列表
+            job_id: 任务唯一标识符
+            replace_existing: 是否替换已存在的同ID任务
+            **kwargs: 其他传递给 add_job 的参数
+
+        Returns:
+            str: 添加的任务ID
+
+        Raises:
+            Exception: 当任务添加失败时抛出异常
+        """
+        try:
+            # 确保参数不为空
+            if args is None:
+                args = []
+
+            # 添加任务到调度器
+            job = self.scheduler.add_job(
+                func=func,
+                trigger=trigger,
+                args=args,
+                id=job_id,
+                replace_existing=replace_existing,
+                **kwargs,  # 其他参数（如特殊的 max_instances 等）
+                # 注意：coalesce, max_instances, misfire_grace_time 由 job_defaults 统一控制
+            )
+
+            logger.debug(
+                "成功添加调度任务 job_id=%s func=%s trigger=%s",
+                job_id or job.id,
+                func.__name__ if hasattr(func, "__name__") else str(func),
+                type(trigger).__name__,
+            )
+
+            return job_id or job.id
+
+        except Exception as e:
+            logger.error(
+                "添加调度任务失败 job_id=%s func=%s error=%s",
+                job_id,
+                func.__name__ if hasattr(func, "__name__") else str(func),
+                e,
+            )
+            raise
+
     def start(self):
         """启动调度器。
 
@@ -181,17 +243,15 @@ class SchedulerAdapter:
             # 使用稳定的重试任务 ID，确保仅存在一个挂起的重试任务（若再次触发会替换）
             retry_job_id = make_job_id(collector.name, param, JobKind.QuotaRetry)
 
-            self.scheduler.add_job(
-                self.run_collector_with_state_update,
+            self._add_scheduler_job(
+                func=self.run_collector_with_state_update,
                 trigger=DateTrigger(
                     run_date=datetime.fromtimestamp(
                         retry_time, tz=self.scheduler.timezone or timezone.utc
                     )
                 ),
                 args=[collector, param],
-                id=retry_job_id,
-                replace_existing=True,
-                # max_instances/coalesce 由 job_defaults 统一控制
+                job_id=retry_job_id,
             )
 
             logger.info(
@@ -293,8 +353,8 @@ class SchedulerAdapter:
                         initial_job_id = make_job_id(
                             collector.name, param_key, JobKind.Initial
                         )
-                        self.scheduler.add_job(
-                            self.run_collector_with_state_update,
+                        self._add_scheduler_job(
+                            func=self.run_collector_with_state_update,
                             trigger=DateTrigger(
                                 run_date=datetime.fromtimestamp(
                                     next_run_time,
@@ -302,9 +362,7 @@ class SchedulerAdapter:
                                 )
                             ),
                             args=[collector, param_key],
-                            id=initial_job_id,
-                            replace_existing=True,
-                            # 统一由 job_defaults 控制并发/合并
+                            job_id=initial_job_id,
                         )
                         job_ids.append(initial_job_id)
 
@@ -319,13 +377,11 @@ class SchedulerAdapter:
                     periodic_job_id = make_job_id(
                         collector.name, param_key, JobKind.Periodic
                     )
-                    self.scheduler.add_job(
-                        self.run_collector_with_state_update,
+                    self._add_scheduler_job(
+                        func=self.run_collector_with_state_update,
                         trigger=IntervalTrigger(seconds=interval),
                         args=[collector, param_key],
-                        id=periodic_job_id,
-                        replace_existing=True,
-                        # 统一由 job_defaults 控制并发/合并
+                        job_id=periodic_job_id,
                     )
                     job_ids.append(periodic_job_id)
 
@@ -367,8 +423,8 @@ class SchedulerAdapter:
                     interval_seconds=interval,
                 ):
                     initial_job_id = make_job_id(collector.name, None, JobKind.Initial)
-                    self.scheduler.add_job(
-                        self.run_collector_with_state_update,
+                    self._add_scheduler_job(
+                        func=self.run_collector_with_state_update,
                         trigger=DateTrigger(
                             run_date=datetime.fromtimestamp(
                                 next_run_time,
@@ -376,9 +432,7 @@ class SchedulerAdapter:
                             )
                         ),
                         args=[collector],
-                        id=initial_job_id,
-                        replace_existing=True,
-                        # 统一由 job_defaults 控制并发/合并
+                        job_id=initial_job_id,
                     )
                     job_ids.append(initial_job_id)
 
@@ -390,13 +444,11 @@ class SchedulerAdapter:
 
                 # 添加周期性任务
                 periodic_job_id = make_job_id(collector.name, None, JobKind.Periodic)
-                self.scheduler.add_job(
-                    self.run_collector_with_state_update,
+                self._add_scheduler_job(
+                    func=self.run_collector_with_state_update,
                     trigger=IntervalTrigger(seconds=interval),
                     args=[collector],
-                    id=periodic_job_id,
-                    replace_existing=True,
-                    # 统一由 job_defaults 控制并发/合并
+                    job_id=periodic_job_id,
                 )
                 job_ids.append(periodic_job_id)
 
