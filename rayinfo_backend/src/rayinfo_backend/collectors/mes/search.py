@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import uuid
-from typing import AsyncIterator, List, Dict, Any, Optional
+from typing import AsyncIterator, Dict, Any, Optional
 
-from ..base import BaseCollector, RawEvent, QuotaExceededException
+from ..base import BaseCollector, RawEvent
 from ...config.settings import get_settings
 from .mes_executor import execute_mes_command
 
