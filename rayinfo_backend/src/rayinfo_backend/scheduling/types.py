@@ -26,15 +26,15 @@ def make_job_id(
 ) -> str:
     """生成统一格式的 APScheduler job id。
 
-    兼容既有命名风格：
-    - 普通采集器:  "<collector>:initial" / "<collector>:periodic"
-    - 参数化采集器: "<collector>:<param>:initial" / "<collector>:<param>:periodic"
-    - 配额重试:    在上述基础上使用 "quota_retry"，并可附加时间戳后缀以确保唯一
+    简化后的命名风格（不再区分任何任务类型）：
+    - 普通采集器:  "<collector>"
+    - 参数化采集器: "<collector>:<param>"
+    - 配额重试:    与普通采集器格式相同
 
     Args:
         collector_name: 采集器名称
         param: 参数化采集器的参数，普通采集器为 None
-        kind: 任务类型
+        kind: 任务类型（不再影响 ID 生成）
         suffix: 可选后缀（例如时间戳）
 
     Returns:
@@ -44,7 +44,8 @@ def make_job_id(
     parts: list[str] = [collector_name]
     if param is not None:
         parts.append(str(param))
-    parts.append(kind.value)
+    
+    # 不再添加任何任务类型标识
     if suffix:
         parts.append(suffix)
     return ":".join(parts)
