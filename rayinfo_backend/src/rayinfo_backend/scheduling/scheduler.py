@@ -20,8 +20,6 @@ from ..utils.instance_id import instance_manager
 from .state_manager import CollectorStateManager
 from .types import JobKind, make_job_id
 
-# 2025-08: 移除对已弃用 strategies 模块的依赖
-
 logger = logging.getLogger("rayinfo.scheduler")
 
 
