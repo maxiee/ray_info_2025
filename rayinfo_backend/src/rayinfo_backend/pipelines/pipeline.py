@@ -4,6 +4,7 @@
 """
 
 from __future__ import annotations
+from typing import AsyncIterator
 
 from ..collectors.base import RawEvent
 from .stage_base import PipelineStage
@@ -36,3 +37,20 @@ class Pipeline:
         for stage in self.stages:
             data = stage.process(data)
         return data
+
+    async def run_from_async_generator(self, async_generator: AsyncIterator[RawEvent]) -> int:
+        """从异步生成器运行管道处理
+
+        Args:
+            async_generator: 产生RawEvent的异步生成器
+
+        Returns:
+            处理的事件数量
+        """
+        events = []
+        async for event in async_generator:
+            events.append(event)
+        
+        # 使用现有的run方法处理事件
+        processed_events = self.run(events)
+        return len(processed_events)

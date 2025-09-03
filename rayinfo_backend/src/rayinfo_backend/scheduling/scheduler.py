@@ -167,34 +167,19 @@ class SchedulerAdapter:
                 "[run] 开始执行采集器 collector=%s param=%s", collector.name, param
             )
 
-            events = []
+            # 执行采集任务并直接处理数据
+            # 统一调用fetch方法，param参数会自动处理参数化和普通采集器
+            # 直接将异步生成器传递给pipeline，避免内存中积累所有事件
+            event_count = await self.pipeline.run_from_async_generator(
+                collector.fetch(param=param)
+            )
 
-            # 执行采集任务
-            if param is not None:
-                # 参数化采集器
-                agen = collector.fetch(param=param)  # type: ignore
-            else:
-                # 普通采集器
-                agen = collector.fetch()
-
-            async for ev in agen:  # type: ignore
-                events.append(ev)
-
-            # 处理采集到的数据
-            if events:
-                self.pipeline.run(events)
-                logger.info(
-                    "[run] 采集完成 collector=%s param=%s events=%d",
-                    collector.name,
-                    param,
-                    len(events),
-                )
-            else:
-                logger.info(
-                    "[run] 采集完成但无数据 collector=%s param=%s",
-                    collector.name,
-                    param,
-                )
+            logger.info(
+                "[run] 采集完成 collector=%s param=%s events=%d",
+                collector.name,
+                param,
+                event_count,
+            )
 
         except QuotaExceededException as e:
             # API 配额超限异常的特殊处理
