@@ -75,13 +75,14 @@ APScheduler 是工厂里强大的“自动闹钟系统”。可以把 `Scheduler
 ##### 一次执行完整旅程（时间线）
 
 1. 启动：`adapter.start()` -> APScheduler 启动自己的事件循环任务管理。
-2. 注册：`add_collector_job` 为每个 Collector 设一个“每 N 秒”的 IntervalTrigger。
-3. 到点：APScheduler 内部 tick 到达 -> 找出 due 的 job -> `await job_wrapper()`。
-4. 包装层：`job_wrapper` 调 `run_collector_once`。
+2. 注册：`add_collector_job_with_state` 为每个 Collector 设置状态感知的调度任务。
+3. 到点：APScheduler 内部 tick 到达 -> 找出 due 的 job -> 执行调度任务。
+4. 执行层：调用 `run_collector_with_state_update` 执行采集并更新状态。
 5. 抓取：`collector.fetch()` 返回一个异步生成器（像一条“逐条往外吐”的鱼篓）。
 6. 收集：`async for` 把生成器里产生的每个事件装进 `events` 列表。
 7. 加工：不为空则 `pipeline.run(events)`（依次执行 Dedup -> Persist）。
-8. 结束：本轮完成，等待下一个间隔。
+8. 状态更新：记录执行时间和次数到状态管理器。
+9. 结束：本轮完成，等待下一个间隔。
 
 ##### collector.fetch() 
 

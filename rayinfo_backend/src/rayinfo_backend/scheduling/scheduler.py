@@ -69,8 +69,6 @@ class SchedulerAdapter:
             settings.storage.db_path
         )
 
-        # 注意：历史上的策略模式与任务工厂已删除，统一改为状态感知调度
-
         logger.info(f"调度器初始化完成，数据库路径: {settings.storage.db_path}")
 
     def _add_scheduler_job(
@@ -148,24 +146,6 @@ class SchedulerAdapter:
         停止所有正在运行的任务，不等待任务完成即立即关闭。
         """
         self.scheduler.shutdown(wait=False)
-
-    async def run_collector_once(self, collector: BaseCollector) -> None:
-        """执行单次数据收集任务。
-
-        调用指定收集器抓取数据，将获取的所有事件聚合成列表后
-        交给数据处理管道进行后续处理。
-
-        Args:
-            collector (BaseCollector): 要执行的数据收集器实例
-        """
-        logger.info("[run] collector=%s", collector.name)
-        events = []
-        # 返回异步生成器；可以“边等网络边产出”而不是一次性全返回，减小等待时间浪费。
-        agen = collector.fetch()
-        async for ev in agen:  # type: ignore
-            events.append(ev)
-        if events:
-            self.pipeline.run(events)
 
     async def run_collector_with_state_update(
         self, collector: BaseCollector, param: Optional[str] = None
