@@ -18,7 +18,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Union
 
-from ..base import QuotaExceededException
+from ..base import CollectorRetryableException
 
 logger = logging.getLogger("rayinfo.collector.mes.executor")
 
@@ -65,7 +65,7 @@ class MesExecutor:
             List[Dict[str, Any]]: 搜索结果列表
 
         Raises:
-            QuotaExceededException: 当 API 配额超限时抛出
+            CollectorRetryableException: 当 API 配额超限时抛出
         """
         async with self._mes_lock:
             logger.info(
@@ -116,7 +116,7 @@ class MesExecutor:
             List[Dict[str, Any]]: 解析后的搜索结果列表
 
         Raises:
-            QuotaExceededException: 当检测到 Google API 配额超限时
+            CollectorRetryableException: 当检测到 Google API 配额超限时
         """
         # 组装命令参数
         cmd = [
@@ -180,7 +180,7 @@ class MesExecutor:
             List[Dict[str, Any]]: 搜索结果列表
 
         Raises:
-            QuotaExceededException: 当检测到 Google API 配额超限时
+            CollectorRetryableException: 当检测到 Google API 配额超限时
         """
         # 处理新的 JSON 格式: {"results": [...], "count": N, "rate_limit": {...}}
         if isinstance(data, dict) and "results" in data:
@@ -213,7 +213,7 @@ class MesExecutor:
             engine: 搜索引擎名称
 
         Raises:
-            QuotaExceededException: 当检测到 Google API 配额超限时
+            CollectorRetryableException: 当检测到 Google API 配额超限时
         """
         limit_exceeded = rate_limit.get("limit_exceeded", False)
         requests_used = rate_limit.get("requests_used", 0)
@@ -241,9 +241,10 @@ class MesExecutor:
             )
 
             # 抛出配额超限异常，调度器会处理重调度逻辑
-            raise QuotaExceededException(
-                api_type="google",
-                reset_time=reset_time,
+            reset_delay = reset_time - time.time() if reset_time else None
+            raise CollectorRetryableException(
+                retry_reason="google_api_quota",
+                retry_after=reset_delay,
                 message=f"Google Search API 每日配额已超限 (已使用 {requests_used}/{daily_limit})",
             )
 
@@ -268,6 +269,6 @@ async def execute_mes_command(
         List[Dict[str, Any]]: 搜索结果列表
 
     Raises:
-        QuotaExceededException: 当 API 配额超限时抛出
+        CollectorRetryableException: 当 API 配额超限时抛出
     """
     return await _mes_executor.execute_mes_command(query, engine, time_range)

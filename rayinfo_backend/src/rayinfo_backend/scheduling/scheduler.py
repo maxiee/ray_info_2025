@@ -11,7 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from ..collectors.base import (
     BaseCollector,
-    QuotaExceededException,
+    CollectorRetryableException,
     registry,
 )
 from ..config.settings import get_settings
@@ -161,6 +161,7 @@ class SchedulerAdapter:
         """
         start_time = time.time()
         should_update_state = True  # 标记是否应该更新状态
+        skip_reason = None  # 跳过状态更新的原因
 
         try:
             logger.info(
@@ -181,27 +182,27 @@ class SchedulerAdapter:
                 event_count,
             )
 
-        except QuotaExceededException as e:
-            # API 配额超限异常的特殊处理
+        except CollectorRetryableException as e:
+            # 采集器可重试异常的通用处理
             logger.warning(
-                "[run] API配额超限 collector=%s param=%s api_type=%s reset_time=%s - 不更新状态，重调度到24小时后",
+                "[run] 采集器执行失败，需要重试 collector=%s param=%s reason=%s - 不更新状态，延迟重新调度",
                 collector.name,
                 param,
-                e.api_type,
-                e.reset_time,
+                e.retry_reason,
             )
 
-            # 计算重调度时间（24小时后，或根据 reset_time）
-            retry_delay = 24 * 3600  # 默认24小时
-            if e.reset_time and e.reset_time > time.time():
-                # 使用 API 提供的重置时间
-                retry_delay = e.reset_time - time.time()
-                logger.info(
-                    "[run] 使用API提供的重置时间 delay=%.1f小时", retry_delay / 3600
-                )
-            # 防御式：避免出现负延迟
+            # 计算重调度时间
+            default_retry_delay = 3600  # 默认1小时
+            retry_delay = (
+                e.retry_after if e.retry_after is not None else default_retry_delay
+            )
+            skip_reason = e.retry_reason
+
+            # 防御式：避免出现负延迟或过短延迟
             if retry_delay < 0:
                 retry_delay = 0
+            elif retry_delay < 60:  # 最小重试间隔60秒
+                retry_delay = 60
 
             # 创建延迟重试任务
             retry_time = time.time() + retry_delay
@@ -220,8 +221,9 @@ class SchedulerAdapter:
             )
 
             logger.info(
-                "[run] 已安排配额重试任务 job_id=%s retry_in=%.1f小时",
+                "[run] 已安排重试任务 job_id=%s reason=%s retry_in=%.1f小时",
                 retry_job_id,
+                skip_reason,
                 retry_delay / 3600,
             )
 
@@ -254,9 +256,10 @@ class SchedulerAdapter:
                     )
             else:
                 logger.info(
-                    "[run] 由于配额异常，跳过状态更新 collector=%s param=%s",
+                    "[run] 由于可重试异常，跳过状态更新 collector=%s param=%s reason=%s",
                     collector.name,
                     param,
+                    skip_reason or "unknown",
                 )
 
     def add_collector_job_with_state(self, collector: BaseCollector) -> list[str]:

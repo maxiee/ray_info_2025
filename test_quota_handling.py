@@ -3,8 +3,8 @@
 测试 Google API 限额处理逻辑
 
 这个脚本用于验证：
-1. MesCollector 能正确检测并抛出 QuotaExceededException
-2. 调度器能正确处理限额异常，不更新状态并重调度到24小时后
+1. MesCollector 能正确检测并抛出 CollectorRetryableException
+2. 调度器能正确处理可重试异常，不更新状态并重调度到后续时间
 3. 持久化记录保持在上次成功执行的时间点
 """
 
@@ -22,7 +22,7 @@ sys.path.insert(0, str(project_root / "src"))
 
 # 导入必要的模块
 from rayinfo_backend.collectors.mes.search import MesCollector
-from rayinfo_backend.collectors.base import QuotaExceededException
+from rayinfo_backend.collectors.base import CollectorRetryableException
 from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
 from rayinfo_backend.scheduling.state_manager import CollectorStateManager
 from rayinfo_backend.config.settings import get_settings
@@ -131,9 +131,9 @@ class MockMesCollector(MesCollector):
                     )
 
                     # 抛出配额超限异常
-                    raise QuotaExceededException(
-                        api_type="google",
-                        reset_time=reset_time,
+                    raise CollectorRetryableException(
+                        retry_reason="google_api_quota",
+                        retry_after=86400,  # 24小时后重试
                         message=f"Google Search API daily quota exceeded (used {requests_used}/{daily_limit})",
                     )
 
@@ -170,12 +170,12 @@ async def test_quota_exception_handling():
         events = []
         async for event in quota_collector.fetch(param="test query"):
             events.append(event)
-        logger.error("预期应该抛出 QuotaExceededException，但没有抛出")
-        return False
-    except QuotaExceededException as e:
-        logger.info(f"成功捕获配额超限异常：{e}")
-        logger.info(f"API类型：{e.api_type}")
-        logger.info(f"重置时间：{e.reset_time}")
+        logger.error("预期应该抛出 CollectorRetryableException，但没有抛出")
+        success = False
+    except CollectorRetryableException as e:
+        logger.info(f"成功捕获可重试异常：{e}")
+        logger.info(f"重试原因：{e.retry_reason}")
+        logger.info(f"重试延迟：{e.retry_after} 秒")
         logger.info(f"异常消息：{e}")
     except Exception as e:
         logger.error(f"捕获了意外的异常类型：{type(e).__name__}: {e}")
