@@ -14,150 +14,95 @@ class SearchEngineItem(BaseModel):
     query: str
     interval_seconds: int = Field(ge=1)
     engine: str = Field(default="duckduckgo")
-    time_range: Optional[str] = Field(
-        default=None,
-        pattern="^[dwmy]$",
-        description="时间范围过滤：d=天, w=周, m=月, y=年"
-    )
+    time_range: Optional[str] = Field(default=None)
 
 
 class StateManagementConfig(BaseModel):
-    """状态管理配置模型
-    
-    定义采集器执行状态管理相关配置，用于断点续传功能。
-    """
-    
-    enable_time_persistence: bool = Field(
-        default=True, 
-        description="是否启用时间持久化功能"
-    )
-    cleanup_old_states: bool = Field(
-        default=True, 
-        description="是否自动清理过期状态记录"
-    )
-    state_retention_days: int = Field(
-        default=30, 
-        ge=1, 
-        le=365,
-        description="状态记录保留天数"
-    )
+    enable_time_persistence: bool = Field(default=True)
+    cleanup_old_states: bool = Field(default=True)
+    state_retention_days: int = Field(default=30, ge=1, le=365)
 
 
 class StorageConfig(BaseModel):
-    """存储配置模型
-
-    定义数据库相关配置，包括数据库路径、批量处理大小等。
-    """
-
-    db_path: str = Field(
-        default="./data/rayinfo.db", description="SQLite 数据库文件路径"
+    db_path: str = Field(default="./data/rayinfo.db")
+    batch_size: int = Field(default=100, ge=1)
+    enable_wal: bool = Field(default=True)
+    state_management: StateManagementConfig = Field(
+        default_factory=StateManagementConfig
     )
-    
+
     def __init__(self, **data):
         super().__init__(**data)
         # 支持环境变量覆盖数据库路径
         if "RAYINFO_DB_PATH" in os.environ:
             self.db_path = os.environ["RAYINFO_DB_PATH"]
-    batch_size: int = Field(default=100, ge=1, description="批量处理大小")
-    enable_wal: bool = Field(
-        default=True, description="是否启用 WAL 模式（提升并发性能）"
-    )
-    
-    # 状态管理配置
-    state_management: StateManagementConfig = Field(
-        default_factory=StateManagementConfig,
-        description="采集器状态管理配置"
-    )
 
 
 class Settings(BaseModel):
     scheduler_timezone: str = Field(default="UTC")
     weibo_home_interval_seconds: int = Field(default=60)
-    # 新结构：search_engine 是一个任务列表
     search_engine: List[SearchEngineItem] = Field(default_factory=list)
-    # 存储配置
     storage: StorageConfig = Field(default_factory=StorageConfig)
 
     @staticmethod
-    def from_yaml(path: Path | str) -> "Settings":
-        """从 YAML 文件加载配置（已弃用，使用 from_config_loaders 代替）
-        
-        Args:
-            path: YAML 文件路径
-            
-        Returns:
-            Settings 实例
-        """
-        import warnings
-        warnings.warn(
-            "from_yaml 方法已弃用，请使用 from_config_loaders，"
-            "将在下一个版本中移除",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        
-        # 为向后兼容，使用新的加载器实现
-        from .loaders import YamlConfigLoader, ConfigParser
-        loader = YamlConfigLoader(path)
-        config_data = loader.load()
-        return ConfigParser.parse(config_data)
-    
-    @staticmethod
-    def from_config_loaders() -> "Settings":
-        """使用新的配置加载器模式加载配置
-        
-        按优先级顺序合并多个配置源：默认配置 < YAML文件 < 环境变量
-        
-        Returns:
-            Settings 实例
-        """
-        from .loaders import create_default_config_loader, ConfigParser
-        
-        loader = create_default_config_loader()
-        config_data = loader.load()
-        return ConfigParser.parse(config_data)
+    def from_yaml(path: Optional[Path | str] = None) -> "Settings":
+        """从 YAML 文件加载配置"""
+        if path is None:
+            path = _discover_yaml_path()
+
+        path = Path(path)
+        if not path.exists():
+            logger.warning(f"配置文件不存在: {path}")
+            return Settings()
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+
+            # 解析搜索引擎配置
+            search_engine_items = []
+            for item_data in data.get("search_engine", []):
+                if isinstance(item_data, dict):
+                    try:
+                        search_engine_items.append(SearchEngineItem(**item_data))
+                    except Exception as e:
+                        logger.warning(
+                            f"跳过无效的搜索引擎配置项: {item_data}, 错误: {e}"
+                        )
+
+            # 解析存储配置
+            storage_data = data.get("storage", {})
+            storage_config = StorageConfig(**storage_data)
+
+            return Settings(
+                scheduler_timezone=data.get("scheduler_timezone", "UTC"),
+                weibo_home_interval_seconds=data.get("weibo_home_interval_seconds", 60),
+                search_engine=search_engine_items,
+                storage=storage_config,
+            )
+
+        except Exception as e:
+            logger.error(f"加载配置文件失败: {e}")
+            return Settings()
 
 
-_settings: Settings | None = None
-
-
-def _discover_settings_path() -> Path:
-    """Try to locate rayinfo.yaml by walking parents.
-
-    原实现假设: settings.py 上三级目录存在 rayinfo.yaml (即 src 同级). 实际仓库结构:
-    repo_root/
-      rayinfo_backend/            <-- rayinfo.yaml 在这里
-        rayinfo.yaml
-        src/rayinfo_backend/config/settings.py
-
-    因此原路径指向 src/rayinfo.yaml, 文件不存在 -> 使用默认配置, 导致 MesCollector 查询列表为空，
-    调度器认为没有参数化任务。
-    本函数向上逐级寻找第一个包含 rayinfo.yaml 的目录。
-    """
+def _discover_yaml_path() -> Path:
+    """向上递归查找 rayinfo.yaml 文件"""
     start = Path(__file__).resolve()
     for parent in start.parents:
         candidate = parent / "rayinfo.yaml"
         if candidate.exists():
             return candidate
-    # fallback (保持原逻辑，尽管很可能不存在)
+    # 默认位置
     return Path(__file__).resolve().parent.parent.parent / "rayinfo.yaml"
 
 
-_settings_path: Path = _discover_settings_path()
-logger.debug(
-    "settings yaml resolved path=%s exists=%s", _settings_path, _settings_path.exists()
-)
+_settings: Settings | None = None
 
 
 def get_settings() -> Settings:
-    """获取全局配置实例
-    
-    使用新的配置加载器模式，支持多配置源合并。
-    
-    Returns:
-        Settings实例
-    """
+    """获取全局配置实例"""
     global _settings
     if _settings is None:
-        _settings = Settings.from_config_loaders()
+        _settings = Settings.from_yaml()
     return _settings
