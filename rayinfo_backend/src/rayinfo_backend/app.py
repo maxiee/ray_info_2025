@@ -30,7 +30,7 @@ logger = setup_logging()
 
 class SchedulerProtocol(Protocol):
     """调度器协议，定义调度器必须实现的接口"""
-    
+
     def load_all_collectors(self) -> None: ...
     async def async_start(self) -> None: ...
     async def async_shutdown(self) -> None: ...
@@ -56,10 +56,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
 
     # 加载采集器并启动调度器
     adapter.load_all_collectors()
-    
+
     # 异步启动调度器
     await adapter.async_start()
-    
+
     logger.info("Scheduler started")
 
     try:
@@ -100,7 +100,7 @@ async def root():
 @app.get("/status")
 async def get_status() -> dict[str, Any]:
     """获取系统状态信息。
-    
+
     返回:
         包含系统状态的字典
     """
@@ -109,16 +109,19 @@ async def get_status() -> dict[str, Any]:
         "scheduler_type": "RayScheduler",
         "timestamp": datetime.now().isoformat(),
     }
-    
+
     if adapter and isinstance(adapter, RaySchedulerAdapter):
         from .ray_scheduler.registry import registry
+
         scheduler = adapter.scheduler
-        status.update({
-            "scheduler_running": scheduler.is_running(),
-            "registered_jobs": len(registry.sources),
-            "pending_tasks": len(scheduler._heap),
-        })
-    
+        status.update(
+            {
+                "scheduler_running": scheduler.is_running(),
+                "registered_jobs": len(registry.sources),
+                "pending_tasks": len(scheduler._heap),
+            }
+        )
+
     return status
 
 

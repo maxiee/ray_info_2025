@@ -2,7 +2,7 @@
 
 主要组件:
 - Task: 调度的最小单元
-- BaseTaskConsumer: 任务生产者/消费者基类  
+- BaseTaskConsumer: 任务生产者/消费者基类
 - TaskConsumerRegistry: 任务消费者注册表
 - RayScheduler: 核心调度器
 - CollectorTaskConsumer: 采集器适配器
@@ -27,7 +27,7 @@ from .types import JobKind, make_job_id
 
 __all__ = [
     "Task",
-    "BaseTaskConsumer", 
+    "BaseTaskConsumer",
     "TaskConsumerRegistry",
     "registry",
     "RayScheduler",

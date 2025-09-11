@@ -44,7 +44,7 @@ def make_job_id(
     parts: list[str] = [collector_name]
     if param is not None:
         parts.append(str(param))
-    
+
     # 不再添加任何任务类型标识
     if suffix:
         parts.append(suffix)
