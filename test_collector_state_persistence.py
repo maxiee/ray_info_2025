@@ -16,8 +16,8 @@ from datetime import datetime
 test_db_path = tempfile.mktemp(suffix=".db")
 os.environ["RAYINFO_DB_PATH"] = test_db_path
 
-from rayinfo_backend.scheduling.state_manager import CollectorStateManager
-from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
+from rayinfo_backend.ray_scheduler.state_manager import CollectorStateManager
+from rayinfo_backend.ray_scheduler.ray_adapter import RaySchedulerAdapter
 from rayinfo_backend.models.info_item import DatabaseManager, CollectorExecutionState
 from rayinfo_backend.collectors.base import BaseCollector, RawEvent
 from rayinfo_backend.config.settings import SearchEngineItem
@@ -245,7 +245,7 @@ class TestSchedulerIntegration(unittest.TestCase):
         DatabaseManager.reset_instance()
 
         # 创建测试调度器（不启动）
-        self.scheduler_adapter = SchedulerAdapter()
+        self.scheduler_adapter = RaySchedulerAdapter()
         # 不启动真实的调度器，避免在测试中触发实际任务
 
     def tearDown(self):
@@ -331,7 +331,7 @@ class TestCompleteWorkflow(unittest.TestCase):
     async def test_end_to_end_persistence(self):
         """测试端到端的时间持久化流程"""
         # 1. 创建调度器和采集器
-        scheduler_adapter = SchedulerAdapter()
+        scheduler_adapter = RaySchedulerAdapter()
         collector = MockSimpleCollector("test.e2e", 300)
 
         # 2. 验证首次运行状态

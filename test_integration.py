@@ -22,12 +22,12 @@ async def test_scheduler_integration():
     print("=== 测试调度器集成 ===")
     
     try:
-        from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
+        from rayinfo_backend.ray_scheduler.ray_adapter import RaySchedulerAdapter
         from rayinfo_backend.collectors.base import registry
         print("✓ 导入调度器成功")
         
         # 创建调度器实例
-        scheduler = SchedulerAdapter()
+        scheduler = RaySchedulerAdapter()
         print("✓ 调度器实例创建成功")
         
         # 检查状态管理器是否正常工作

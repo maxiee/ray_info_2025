@@ -64,9 +64,9 @@ def test_scheduler_import():
     """测试调度器导入"""
     print("\n测试调度器导入...")
     try:
-        from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
+        from rayinfo_backend.ray_scheduler.ray_adapter import RaySchedulerAdapter
 
-        print("✓ SchedulerAdapter 导入成功")
+        print("✓ RaySchedulerAdapter 导入成功")
         return True
     except ImportError as e:
         print(f"✗ 调度器导入失败: {e}")

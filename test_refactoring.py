@@ -19,7 +19,7 @@ from rayinfo_backend.collectors.base import (
     RawEvent,
     BaseCollector,
 )
-from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
+from rayinfo_backend.ray_scheduler.ray_adapter import RaySchedulerAdapter
 from rayinfo_backend.pipelines import DedupStage, PersistStage, Pipeline
 from rayinfo_backend.config.loaders import create_default_config_loader, ConfigParser
 from rayinfo_backend.config.validators import validate_settings
@@ -90,7 +90,7 @@ def test_scheduler_strategy_pattern():
         os.environ["RAYINFO_DB_PATH"] = db_path
 
         # 创建调度器
-        scheduler = SchedulerAdapter()
+        scheduler = RaySchedulerAdapter()
 
         # 创建测试采集器
         simple_collector = TestSimpleCollector()

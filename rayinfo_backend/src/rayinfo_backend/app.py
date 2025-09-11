@@ -1,10 +1,10 @@
 """RayInfo 后端核心骨架
 
-仅包含：
+使用新的 RayScheduler 异步任务调度框架：
 - FastAPI 实例
-- APScheduler AsyncIOScheduler 集成（应用启动/关闭生命周期）
-- 一个示例周期任务（打印日志）
-- 一个 Hello World 路由
+- RayScheduler 异步调度器集成（应用启动/关闭生命周期）
+- 自动发现和注册采集器
+- RESTful API 接口
 
 后续实际业务（抓取、数据持久化等）在此基础上扩展。
 """
@@ -12,21 +12,33 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from datetime import datetime
+from typing import Any, AsyncIterator, Protocol
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .utils.logging import setup_logging
-from .scheduling.scheduler import SchedulerAdapter
-from .collectors import discover_and_register  # 新增: 自动发现 collectors
+from .collectors import discover_and_register  # 自动发现 collectors
 from .utils.instance_id import instance_manager
 from .api.v1 import router as api_v1_router
+from .ray_scheduler.ray_adapter import RaySchedulerAdapter
 
 logger = setup_logging()
 
-adapter: SchedulerAdapter | None = None
+
+class SchedulerProtocol(Protocol):
+    """调度器协议，定义调度器必须实现的接口"""
+    
+    def load_all_collectors(self) -> None: ...
+    async def async_start(self) -> None: ...
+    async def async_shutdown(self) -> None: ...
+    async def run_instance_by_id(self, instance_id: str) -> dict[str, str]: ...
+
+
+# 全局调度器实例
+adapter: SchedulerProtocol | None = None
 
 
 @asynccontextmanager
@@ -38,9 +50,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
     # 自动发现并注册所有 collectors
     discover_and_register()
 
-    adapter = SchedulerAdapter()
+    # 使用新的 RayScheduler 调度器
+    logger.info("使用 RayScheduler 调度器")
+    adapter = RaySchedulerAdapter()
+
+    # 加载采集器并启动调度器
     adapter.load_all_collectors()
-    adapter.start()
+    
+    # 异步启动调度器
+    await adapter.async_start()
+    
     logger.info("Scheduler started")
 
     try:
@@ -48,7 +67,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
     finally:
         logger.info("Application shutting down ...")
         if adapter:
-            adapter.shutdown()
+            # 异步关闭调度器
+            await adapter.async_shutdown()
             logger.info("Scheduler stopped.")
 
 
@@ -75,6 +95,31 @@ app.include_router(api_v1_router)
 @app.get("/", summary="健康检查 / Hello")
 async def root():
     return {"message": "Hello RayInfo"}
+
+
+@app.get("/status")
+async def get_status() -> dict[str, Any]:
+    """获取系统状态信息。
+    
+    返回:
+        包含系统状态的字典
+    """
+    status: dict[str, Any] = {
+        "message": "RayInfo Backend Service is running",
+        "scheduler_type": "RayScheduler",
+        "timestamp": datetime.now().isoformat(),
+    }
+    
+    if adapter and isinstance(adapter, RaySchedulerAdapter):
+        from .ray_scheduler.registry import registry
+        scheduler = adapter.scheduler
+        status.update({
+            "scheduler_running": scheduler.is_running(),
+            "registered_jobs": len(registry.sources),
+            "pending_tasks": len(scheduler._heap),
+        })
+    
+    return status
 
 
 @app.get("/instances", summary="列出所有采集器实例")

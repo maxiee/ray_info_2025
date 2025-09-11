@@ -18,7 +18,7 @@ project_root = Path(__file__).parent / "rayinfo_backend"
 sys.path.insert(0, str(project_root / "src"))
 
 from rayinfo_backend.collectors.mes.search import MesCollector
-from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
+from rayinfo_backend.ray_scheduler.ray_adapter import RaySchedulerAdapter
 
 # 配置日志
 logging.basicConfig(
@@ -69,7 +69,7 @@ def test_scheduler_configuration():
     logger.info("\n2. 测试调度器配置")
 
     # 创建调度器
-    scheduler = SchedulerAdapter()
+    scheduler = RaySchedulerAdapter()
 
     # 检查调度器配置
     logger.info(f"调度器类型: {type(scheduler.scheduler)}")

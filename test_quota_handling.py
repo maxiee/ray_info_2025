@@ -23,8 +23,8 @@ sys.path.insert(0, str(project_root / "src"))
 # 导入必要的模块
 from rayinfo_backend.collectors.mes.search import MesCollector
 from rayinfo_backend.collectors.base import CollectorRetryableException
-from rayinfo_backend.scheduling.scheduler import SchedulerAdapter
-from rayinfo_backend.scheduling.state_manager import CollectorStateManager
+from rayinfo_backend.ray_scheduler.ray_adapter import RaySchedulerAdapter
+from rayinfo_backend.ray_scheduler.state_manager import CollectorStateManager
 from rayinfo_backend.config.settings import get_settings
 
 # 配置日志
@@ -216,7 +216,7 @@ async def test_scheduler_integration():
     logger.info(f"正常执行后状态：{after_success_time}")
 
     # 创建调度器（但不启动）
-    scheduler = SchedulerAdapter()
+    scheduler = RaySchedulerAdapter()
 
     # 模拟配额超限的执行
     quota_collector = MockMesCollector(simulate_quota_exceeded=True)

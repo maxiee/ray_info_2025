@@ -19,7 +19,7 @@ test_db = tempfile.mktemp(suffix='.db')
 os.environ['RAYINFO_DB_PATH'] = test_db
 
 try:
-    from rayinfo_backend.scheduling.state_manager import CollectorStateManager
+    from rayinfo_backend.ray_scheduler.state_manager import CollectorStateManager
     from rayinfo_backend.models.info_item import DatabaseManager, CollectorExecutionState
     print("✓ 模块导入成功")
 except ImportError as e:
