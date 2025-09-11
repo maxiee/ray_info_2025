@@ -21,30 +21,24 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .utils.logging import setup_logging
 from .api.v1 import router as api_v1_router
+from .ray_scheduler import RayScheduler
 
 logger = setup_logging()
 
-
-class SchedulerProtocol(Protocol):
-    """调度器协议，定义调度器必须实现的接口"""
-
-    async def async_start(self) -> None: ...
-    async def async_shutdown(self) -> None: ...
-
-
 # 全局调度器实例
-adapter: SchedulerProtocol | None = None
+scheduler: RayScheduler | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 兼容)
     """应用生命周期：启动调度器 & 关闭清理。"""
-    global adapter
+    global scheduler
     logger.info("Application starting ...")
 
-    # 注意：BaseCollector 相关功能已移除，目前仅启动基础服务
-    logger.info("基础服务启动（采集器功能已移除）")
-    adapter = None  # 暂时设为None，等待新的调度器实现
+    # 初始化并启动 RayScheduler
+    scheduler = RayScheduler()
+    await scheduler.start()
+    logger.info("RayScheduler started successfully")
 
     logger.info("Application started")
 
@@ -52,9 +46,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
         yield
     finally:
         logger.info("Application shutting down ...")
-        if adapter:
-            await adapter.async_shutdown()
-            logger.info("Scheduler stopped.")
+        if scheduler:
+            await scheduler.stop()
+            logger.info("RayScheduler stopped.")
+            scheduler = None
 
 
 app = FastAPI(
@@ -91,12 +86,17 @@ async def get_status() -> dict[str, Any]:
     """
     status: dict[str, Any] = {
         "message": "RayInfo Backend Service is running",
-        "scheduler_type": "Basic (BaseCollector removed)",
+        "scheduler_type": "RayScheduler",
         "timestamp": datetime.now().isoformat(),
-        "scheduler_running": False,
-        "registered_jobs": 0,
-        "pending_tasks": 0,
+        "scheduler_running": scheduler.is_running() if scheduler else False,
+        "registered_jobs": 0,  # TODO: 从注册表获取
+        "pending_tasks": scheduler.get_queue_size() if scheduler else 0,
     }
+
+    if scheduler:
+        next_task_time = scheduler.get_next_task_time()
+        if next_task_time:
+            status["next_task_time"] = next_task_time.isoformat()
 
     return status
 
