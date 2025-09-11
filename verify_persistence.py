@@ -59,7 +59,12 @@ def test_state_manager_basic():
 
     # 验证时间已保存
     saved_time = state_manager.get_last_execution_time(collector_name)
-    print(f"✓ 时间保存验证: {abs(saved_time - test_time) < 1}")
+    if saved_time is not None:
+        time_diff_ok = abs(saved_time - test_time) < 1
+        print(f"✓ 时间保存验证: {time_diff_ok}")
+    else:
+        print("❌ 错误：保存的时间为 None")
+        return False
 
     # 测试不应该立即执行（刚执行过）
     should_run = state_manager.should_run_immediately(collector_name, None, 300)
@@ -96,8 +101,12 @@ def test_parameterized_collector():
     saved_time1 = state_manager.get_last_execution_time(collector_name, param1)
     saved_time2 = state_manager.get_last_execution_time(collector_name, param2)
 
-    independent = abs(saved_time1 - time1) < 1 and abs(saved_time2 - time2) < 1
-    print(f"✓ 参数状态独立性: {independent}")
+    if saved_time1 is not None and saved_time2 is not None:
+        independent = abs(saved_time1 - time1) < 1 and abs(saved_time2 - time2) < 1
+        print(f"✓ 参数状态独立性: {independent}")
+    else:
+        print("❌ 错误：保存的时间为 None")
+        return False
 
     return True
 

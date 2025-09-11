@@ -20,10 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .utils.logging import setup_logging
-from .collectors import discover_and_register  # 自动发现 collectors
-from .utils.instance_id import instance_manager
 from .api.v1 import router as api_v1_router
-from .ray_scheduler.ray_adapter import RaySchedulerAdapter
 
 logger = setup_logging()
 
@@ -31,10 +28,8 @@ logger = setup_logging()
 class SchedulerProtocol(Protocol):
     """调度器协议，定义调度器必须实现的接口"""
 
-    def load_all_collectors(self) -> None: ...
     async def async_start(self) -> None: ...
     async def async_shutdown(self) -> None: ...
-    async def run_instance_by_id(self, instance_id: str) -> dict[str, str]: ...
 
 
 # 全局调度器实例
@@ -47,27 +42,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
     global adapter
     logger.info("Application starting ...")
 
-    # 自动发现并注册所有 collectors
-    discover_and_register()
+    # 注意：BaseCollector 相关功能已移除，目前仅启动基础服务
+    logger.info("基础服务启动（采集器功能已移除）")
+    adapter = None  # 暂时设为None，等待新的调度器实现
 
-    # 使用新的 RayScheduler 调度器
-    logger.info("使用 RayScheduler 调度器")
-    adapter = RaySchedulerAdapter()
-
-    # 加载采集器并启动调度器
-    adapter.load_all_collectors()
-
-    # 异步启动调度器
-    await adapter.async_start()
-
-    logger.info("Scheduler started")
+    logger.info("Application started")
 
     try:
         yield
     finally:
         logger.info("Application shutting down ...")
         if adapter:
-            # 异步关闭调度器
             await adapter.async_shutdown()
             logger.info("Scheduler stopped.")
 
@@ -106,21 +91,12 @@ async def get_status() -> dict[str, Any]:
     """
     status: dict[str, Any] = {
         "message": "RayInfo Backend Service is running",
-        "scheduler_type": "RayScheduler",
+        "scheduler_type": "Basic (BaseCollector removed)",
         "timestamp": datetime.now().isoformat(),
+        "scheduler_running": False,
+        "registered_jobs": 0,
+        "pending_tasks": 0,
     }
-
-    if adapter and isinstance(adapter, RaySchedulerAdapter):
-        from .ray_scheduler.registry import registry
-
-        scheduler = adapter.scheduler
-        status.update(
-            {
-                "scheduler_running": scheduler.is_running(),
-                "registered_jobs": len(registry.sources),
-                "pending_tasks": len(scheduler._heap),
-            }
-        )
 
     return status
 
@@ -132,8 +108,12 @@ async def list_instances():
     Returns:
         dict: 包含所有实例信息的字典，键为实例ID，值为实例详情
     """
-    instances = instance_manager.list_all_instances()
-    return {"total_count": len(instances), "instances": instances}
+    # 注意：实例管理器已移除，返回空的结果
+    return {
+        "total_count": 0,
+        "instances": {},
+        "message": "Instance manager removed with BaseCollector",
+    }
 
 
 @app.get("/collectors", summary="按类型分组列出采集器")
@@ -143,41 +123,11 @@ async def list_collectors_by_type():
     Returns:
         dict: 按采集器类型分组的实例信息
     """
-    instances = instance_manager.list_all_instances()
-    collectors_by_type = {}
-
-    for instance_id, instance_info in instances.items():
-        collector_name = instance_info["collector_name"]
-
-        if collector_name not in collectors_by_type:
-            collectors_by_type[collector_name] = {
-                "collector_name": collector_name,
-                "display_name": _get_collector_display_name(collector_name),
-                "total_instances": 0,
-                "instances": [],
-            }
-
-        # 添加实例信息
-        instance_detail = {
-            "instance_id": instance_id,
-            "param": instance_info.get("param"),
-            "display_name": _get_instance_display_name(
-                collector_name, instance_info.get("param")
-            ),
-            "status": instance_info.get("status"),
-            "health_score": instance_info.get("health_score"),
-            "run_count": instance_info.get("run_count", 0),
-            "error_count": instance_info.get("error_count", 0),
-            "last_run": instance_info.get("last_run"),
-            "created_at": instance_info.get("created_at"),
-        }
-
-        collectors_by_type[collector_name]["instances"].append(instance_detail)
-        collectors_by_type[collector_name]["total_instances"] += 1
-
+    # 注意：采集器管理器已移除，返回空的结果
     return {
-        "total_collectors": len(collectors_by_type),
-        "collectors": collectors_by_type,
+        "total_collectors": 0,
+        "collectors": {},
+        "message": "Collector management removed with BaseCollector",
     }
 
 
@@ -214,18 +164,11 @@ async def trigger_instance(instance_id: str):
     Raises:
         HTTPException: 当实例不存在或执行失败时
     """
-    if adapter is None:
-        raise HTTPException(status_code=503, detail="Scheduler not initialized")
-
-    try:
-        result = await adapter.run_instance_by_id(instance_id)
-        if result["status"] == "error":
-            raise HTTPException(status_code=500, detail=result["message"])
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+    # 注意：手动触发功能已移除
+    raise HTTPException(
+        status_code=501,
+        detail="Manual trigger functionality removed with BaseCollector",
+    )
 
 
 # 可选：uvicorn 直接运行入口

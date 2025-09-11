@@ -9,7 +9,6 @@ import 'data/repositories/collector_repository_impl.dart';
 import 'domain/usecases/get_articles.dart';
 import 'domain/usecases/search_articles.dart';
 import 'domain/usecases/get_sources.dart';
-import 'domain/usecases/get_collectors.dart';
 import 'presentation/bloc/articles/articles_bloc.dart';
 import 'presentation/bloc/search/search_bloc.dart';
 import 'presentation/bloc/read_status/read_status_bloc.dart';
@@ -35,7 +34,6 @@ class MyApp extends StatelessWidget {
     final getArticlesUseCase = GetArticlesUseCase(articleRepository);
     final searchArticlesUseCase = SearchArticlesUseCase(articleRepository);
     final getSourcesUseCase = GetSourcesUseCase(articleRepository);
-    final getCollectorsUseCase = GetCollectorsUseCase(collectorRepository);
 
     return MultiBlocProvider(
       providers: [
