@@ -31,18 +31,6 @@ class BaseTaskConsumer(ABC):
         self.concurrent_count = max(1, concurrent_count)  # 确保至少为1
 
     @abstractmethod
-    def produce(self, args: Optional[Dict[str, Any]] = None) -> Task:
-        """根据输入参数创建一个 Task 任务
-
-        Args:
-            args: 传入的参数字典
-
-        Returns:
-            创建的 Task 实例
-        """
-        raise NotImplementedError
-
-    @abstractmethod
     async def consume(self, task: Task) -> None:
         """消费一个任务，执行对应具体操作
 

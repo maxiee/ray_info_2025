@@ -1,9 +1,10 @@
-"""MES 命令执行器 - 提供带同步锁的协程安全执行机制
+"""MES 命令执行器 - 继承自 BaseTaskConsumer 的 MES 任务消费者
 
 这个模块实现了对 mes CLI 命令的协程安全调用，确保同一时间只有一个 mes 命令在执行。
 这对于避免搜索引擎 API 的并发调用限制和提高系统稳定性是非常重要的。
 
 主要特性：
+- 继承自 BaseTaskConsumer，遵循 RayScheduler 调度器规范
 - 使用 asyncio.Lock 确保 mes 命令的串行执行
 - 保持原有的 JSON 解析和错误处理逻辑
 - 支持配额检测和异常处理
@@ -18,35 +19,115 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Union
 
+from ...ray_scheduler.consumer import BaseTaskConsumer
+from ...ray_scheduler.task import Task
 from ..base import CollectorRetryableException
 
 logger = logging.getLogger("rayinfo.collector.mes.executor")
 
 
-class MesExecutor:
-    """MES 命令执行器 - 提供协程安全的 mes 命令调用
+class MesExecutor(BaseTaskConsumer):
+    """MES 命令执行器 - 继承自 BaseTaskConsumer 的 MES 任务消费者
 
     这个类实现了单例模式，确保整个应用中只有一个 MesExecutor 实例。
     使用 asyncio.Lock 来保证同一时间只有一个 mes 命令在执行。
+
+    继承自 BaseTaskConsumer，遵循 RayScheduler 调度器规范。
     """
 
     _instance: Optional["MesExecutor"] = None
     _lock = asyncio.Lock()
 
-    def __new__(cls) -> "MesExecutor":
+    def __new__(cls, *args, **kwargs) -> "MesExecutor":
         """单例模式实现"""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._mes_lock = asyncio.Lock()
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
-        """初始化执行器"""
-        if not self._initialized:
+    def __init__(self, name: str = "mes_executor", concurrent_count: int = 1):
+        """初始化执行器
+
+        Args:
+            name: TaskConsumer 名称，默认为 "mes_executor"
+            concurrent_count: 并发数限制，默认为 1（由于 mes 命令需要串行执行）
+        """
+        if not hasattr(self, "_initialized") or not self._initialized:
+            # 调用父类初始化
+            super().__init__(name, concurrent_count)
+
+            # 初始化 mes 执行相关属性
             self._mes_lock = asyncio.Lock()
             self._initialized = True
-            logger.info("MesExecutor 初始化完成")
+            logger.info(
+                "MesExecutor 初始化完成: name=%s, concurrent_count=%s",
+                name,
+                concurrent_count,
+            )
+
+    async def consume(self, task: Task) -> None:
+        """消费一个 MES 搜索任务
+
+        从 Task.args 中提取搜索参数并执行 mes 命令。
+        预期的 args 格式：
+        {
+            "query": str,          # 搜索查询关键词
+            "engine": str,         # 搜索引擎名称 (google, duckduckgo, bing 等)
+            "time_range": str,     # 时间范围过滤器 (可选)
+        }
+
+        Args:
+            task: 要消费的任务
+
+        Raises:
+            ValueError: 当任务参数格式不正确时
+            CollectorRetryableException: 当 API 配额超限时抛出
+        """
+        logger.info("开始消费 MES 任务: %s", task)
+
+        # 验证任务来源
+        if task.source != self.name:
+            logger.warning("任务来源不匹配: 预期=%s, 实际=%s", self.name, task.source)
+
+        # 提取任务参数
+        args = task.args
+        query = args.get("query")
+        engine = args.get("engine")
+        time_range = args.get("time_range")
+
+        # 验证必需参数
+        if not query:
+            raise ValueError("Missing required parameter: query")
+        if not engine:
+            raise ValueError("Missing required parameter: engine")
+
+        logger.info(
+            "执行 MES 搜索任务: uuid=%s, query=%s, engine=%s, time_range=%s",
+            task.uuid,
+            query,
+            engine,
+            time_range,
+        )
+
+        try:
+            # 执行搜索
+            results = await self.execute_mes_command(query, engine, time_range)
+            logger.info(
+                "MES 任务完成: uuid=%s, 结果数量=%d",
+                task.uuid,
+                len(results),
+            )
+
+            # 这里可以根据需要处理搜索结果
+            # 例如：保存到数据库、发送通知等
+
+        except Exception as e:
+            logger.error(
+                "MES 任务执行失败: uuid=%s, error=%s",
+                task.uuid,
+                str(e),
+            )
+            raise
 
     async def execute_mes_command(
         self, query: str, engine: str, time_range: Optional[str] = None
@@ -251,6 +332,15 @@ class MesExecutor:
 
 # 创建全局单例实例
 _mes_executor = MesExecutor()
+
+
+def get_mes_executor() -> MesExecutor:
+    """获取 MES 执行器单例实例
+
+    Returns:
+        MesExecutor: 全局单例实例
+    """
+    return _mes_executor
 
 
 async def execute_mes_command(
