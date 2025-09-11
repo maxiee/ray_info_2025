@@ -5,7 +5,6 @@
 - BaseTaskConsumer: 任务生产者/消费者基类
 - TaskConsumerRegistry: 任务消费者注册表
 - RayScheduler: 核心调度器
-- CollectorTaskConsumer: 采集器适配器
 - CollectorStateManager: 状态管理器
 - JobKind, make_job_id: 任务类型和ID生成
 
@@ -15,13 +14,14 @@
 - 最小堆实现的优先级队列
 - 可中断的等待机制
 - 失败任务日志记录
+
+注意：CollectorTaskConsumer 和相关适配器已被移除
 """
 
 from .task import Task
 from .consumer import BaseTaskConsumer
 from .registry import TaskConsumerRegistry, registry
 from .scheduler import RayScheduler
-from .adapters import CollectorTaskConsumer, create_collector_consumer
 from .state_manager import CollectorStateManager
 from .types import JobKind, make_job_id
 
@@ -31,8 +31,6 @@ __all__ = [
     "TaskConsumerRegistry",
     "registry",
     "RayScheduler",
-    "CollectorTaskConsumer",
-    "create_collector_consumer",
     "CollectorStateManager",
     "JobKind",
     "make_job_id",

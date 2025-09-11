@@ -38,7 +38,7 @@ Source -> Collector 抓取 -> (可选) 解析/标准化 -> Pipeline (去重 -> �
 
 ### 核心抽象
 
-- BaseCollector：负责去不同网站把原始信息抓起来，像一个自动抓取信息的机器。
+- ~~BaseCollector（已废弃）~~：负责去不同网站把原始信息抓起来，像一个自动抓取信息的机器。现已移除。
 - TaskDefinition：描述要做哪项抓取工作、带什么参数和什么时候执行，就像一张任务单。
 - TaskInstance（运行态）：任务被实际运行时的那次记录，有唯一 ID 和重试信息，像一次任务的执行事件单。
 - PipelineStage：传送带上的一个工位，负责把事件去重、补充信息或写入数据库，像工厂里的单个工序。
@@ -198,7 +198,7 @@ RawEvent 的作用：
 	 - 对每个 batch 并发 fetch（协程级别），内部应用 rate_limit。
 3. 单用户子流程：
 	 - 构造参数对象 UserFeedParam(user_id, since_cursor)
-	 - 调用 BaseCollector.fetch(param)
+	 - 调用采集器方法（BaseCollector 已废弃）
 	 - 解析 -> Pipeline -> 更新用户 last_run, 游标 since_cursor（例如最新一条微博 ID）
 
 好处：APS 任务数 O(1)，内部并行 O(N)，总控点清晰。
@@ -337,12 +337,12 @@ collectors:
 
 ### 新增 Collector 步骤示例（X 平台）
 
-1. 在 collectors/x/ 新建模块，继承 BaseCollector。
-2. 实现 parameter_schema（若需要参数）。
-3. 在 registry.py 注册。
+1. ~~在 collectors/x/ 新建模块，继承 BaseCollector（已废弃）~~。
+2. ~~实现 parameter_schema（若需要参数）~~。
+3. ~~在 registry.py 注册~~。
 4. 添加默认配置 YAML。
 5. （可选）编写解析与策略文件。
-6. 更新 job_loader 识别新的 collector（多为自动通过 registry）。
+6. ~~更新 job_loader 识别新的 collector（多为自动通过 registry）~~。
 
 ### 错误分类与重试策略
 
@@ -366,7 +366,7 @@ RayInfo 启动后，自动启动 Playwright 浏览器示例，我希望实示例
 
 ### 演进路线
 
-阶段 0：当前基础 + 引入目录骨架 + BaseCollector + Registry。
+阶段 0：当前基础 + 引入目录骨架 + ~~BaseCollector~~ + ~~Registry~~（已废弃）。
 
 阶段 1：微博 home / user_feed 落地，参数化聚合 Job，Pipeline 3 阶段 + 结构化日志。
 

@@ -3,11 +3,11 @@
 提供基于 mes CLI 的多搜索引擎数据收集功能。
 
 主要组件：
-- MesCollector: 主要的搜索数据收集器
 - mes_executor: 提供协程安全的 mes 命令执行机制
+
+注意：MesCollector 已被移除，现在使用 MesExecutor 作为 TaskConsumer
 """
 
-from .search import MesCollector
 from .mes_executor import execute_mes_command
 
-__all__ = ["MesCollector", "execute_mes_command"]
+__all__ = ["execute_mes_command"]
