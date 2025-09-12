@@ -7,8 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import List, Optional, Tuple, Dict, Any
-from sqlalchemy import func, desc, asc, and_, or_, text
-from sqlalchemy.orm import Session, joinedload, outerjoin
+from sqlalchemy import func, desc, or_
 
 from ..models.info_item import RawInfoItem, ArticleReadStatus, DatabaseManager
 from ..api.schemas import ArticleFilters
