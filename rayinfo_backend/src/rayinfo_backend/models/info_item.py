@@ -11,7 +11,6 @@ from typing import Dict, Any, Optional
 import threading
 
 from sqlalchemy import (
-    Column,
     String,
     Text,
     DateTime,
@@ -22,11 +21,17 @@ from sqlalchemy import (
     ForeignKey,
     create_engine,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    sessionmaker,
+)
 
-# SQLAlchemy 基类
-Base = declarative_base()
+
+# SQLAlchemy 基类（Typed Declarative）
+class Base(DeclarativeBase):
+    pass
 
 
 class CollectorExecutionState(Base):
@@ -47,10 +52,10 @@ class CollectorExecutionState(Base):
     __tablename__ = "collector_execution_state"
 
     # 复合主键：任务源名称 + 参数键
-    collector_name = Column(
+    collector_name: Mapped[str] = mapped_column(
         String, primary_key=True, comment="任务源名称，如 weibo.home"
     )
-    param_key = Column(
+    param_key: Mapped[str] = mapped_column(
         String,
         primary_key=True,
         nullable=False,  # 不允许NULL，普通任务使用空字符串
@@ -59,14 +64,20 @@ class CollectorExecutionState(Base):
     )
 
     # 时间戳字段
-    last_execution_time = Column(
+    last_execution_time: Mapped[float] = mapped_column(
         Float, nullable=False, index=True, comment="最后执行时间戳（Unix时间戳）"
     )
-    created_at = Column(Float, nullable=False, comment="创建时间戳")
-    updated_at = Column(Float, nullable=False, comment="更新时间戳")
+    created_at: Mapped[float] = mapped_column(
+        Float, nullable=False, comment="创建时间戳"
+    )
+    updated_at: Mapped[float] = mapped_column(
+        Float, nullable=False, comment="更新时间戳"
+    )
 
     # 统计字段
-    execution_count = Column(Integer, nullable=False, default=0, comment="执行次数统计")
+    execution_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="执行次数统计"
+    )
 
     def __repr__(self) -> str:
         return (
@@ -108,20 +119,28 @@ class ScheduledTask(Base):
     __tablename__ = "scheduled_tasks"
 
     # 主键
-    uuid = Column(String, primary_key=True, comment="任务唯一标识符")
+    uuid: Mapped[str] = mapped_column(
+        String, primary_key=True, comment="任务唯一标识符"
+    )
 
     # 任务基本信息
-    source = Column(String, nullable=False, index=True, comment="任务源名称")
-    args = Column(
+    source: Mapped[str] = mapped_column(
+        String, nullable=False, index=True, comment="任务源名称"
+    )
+    args: Mapped[Dict[str, Any]] = mapped_column(
         JSON, nullable=False, default=lambda: {}, comment="任务参数（JSON格式）"
     )
 
     # 调度信息
-    schedule_at = Column(DateTime, nullable=False, index=True, comment="计划执行时间")
-    interval = Column(Integer, nullable=True, comment="重复间隔秒数（可选）")
+    schedule_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, index=True, comment="计划执行时间"
+    )
+    interval: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, comment="重复间隔秒数（可选）"
+    )
 
     # 状态信息
-    status = Column(
+    status: Mapped[str] = mapped_column(
         String,
         nullable=False,
         default="pending",
@@ -130,10 +149,10 @@ class ScheduledTask(Base):
     )
 
     # 时间戳
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, comment="创建时间"
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
         default=datetime.utcnow,
@@ -192,31 +211,40 @@ class RawInfoItem(Base):
     __tablename__ = "raw_info_items"
 
     # 主键：使用采集器提供的 post_id 作为去重键
-    post_id = Column(String, primary_key=True, comment="唯一标识符，用于去重")
+    post_id: Mapped[str] = mapped_column(
+        String, primary_key=True, comment="唯一标识符，用于去重"
+    )
 
     # 基础字段
-    source = Column(String, nullable=False, index=True, comment="信息来源标识")
-    title = Column(Text, comment="信息标题")
-    url = Column(Text, comment="信息链接")
-    description = Column(Text, comment="信息描述或摘要")
+    source: Mapped[str] = mapped_column(
+        String, nullable=False, index=True, comment="信息来源标识"
+    )
+    title: Mapped[Optional[str]] = mapped_column(Text, comment="信息标题")
+    url: Mapped[Optional[str]] = mapped_column(Text, comment="信息链接")
+    description: Mapped[Optional[str]] = mapped_column(Text, comment="信息描述或摘要")
 
     # 采集相关字段
-    query = Column(String, index=True, comment="搜索关键词（搜索引擎采集器使用）")
-    engine = Column(String, comment="搜索引擎名称")
+    query: Mapped[Optional[str]] = mapped_column(
+        String, index=True, comment="搜索关键词（搜索引擎采集器使用）"
+    )
+    engine: Mapped[Optional[str]] = mapped_column(String, comment="搜索引擎名称")
 
     # 元数据
-    raw_data = Column(JSON, comment="完整的原始数据")
-    collected_at = Column(
+    raw_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON, comment="完整的原始数据"
+    )
+    collected_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, index=True, comment="采集时间"
     )
 
     # 处理状态
-    processed = Column(
+    processed: Mapped[int] = mapped_column(
         Integer, default=0, index=True, comment="处理状态：0=未处理，1=已处理，-1=失败"
     )
 
     def __repr__(self) -> str:
-        return f"<RawInfoItem(post_id={self.post_id}, source={self.source}, title={self.title[:50]}...)>"
+        title_preview = (self.title or "")[:50]
+        return f"<RawInfoItem(post_id={self.post_id}, source={self.source}, title={title_preview}...)>"
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
@@ -251,7 +279,7 @@ class ArticleReadStatus(Base):
     __tablename__ = "article_read_status"
 
     # 主键：使用 post_id 作为主键，与 raw_info_items 一对一关联
-    post_id = Column(
+    post_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("raw_info_items.post_id", ondelete="CASCADE"),
         primary_key=True,
@@ -259,7 +287,7 @@ class ArticleReadStatus(Base):
     )
 
     # 已读状态
-    is_read = Column(
+    is_read: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
@@ -268,10 +296,10 @@ class ArticleReadStatus(Base):
     )
 
     # 时间戳字段
-    read_at = Column(
+    read_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True, index=True, comment="标记已读的时间戳，未读时为None"
     )
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
         default=datetime.utcnow,
