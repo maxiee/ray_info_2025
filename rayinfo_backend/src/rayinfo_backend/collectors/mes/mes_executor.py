@@ -45,11 +45,11 @@ class MesExecutor(BaseTaskConsumer):
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, name: str = "mes_executor", concurrent_count: int = 1):
+    def __init__(self, name: str = "mes.search", concurrent_count: int = 1):
         """初始化执行器
 
         Args:
-            name: TaskConsumer 名称，默认为 "mes_executor"
+            name: TaskConsumer 名称，默认为 "mes.search"
             concurrent_count: 并发数限制，默认为 1（由于 mes 命令需要串行执行）
         """
         if not hasattr(self, "_initialized") or not self._initialized:

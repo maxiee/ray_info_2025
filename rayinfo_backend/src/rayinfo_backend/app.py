@@ -18,6 +18,10 @@ from typing import Any, AsyncIterator, Protocol
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from rayinfo_backend.collectors.mes.mes_executor import MesExecutor
+from rayinfo_backend.ray_scheduler import registry
+from rayinfo_backend.ray_scheduler.task import Task
+from rayinfo_backend.config.settings import get_settings
 
 from .utils.logging import setup_logging
 from .api.v1 import router as api_v1_router
@@ -35,10 +39,47 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
     global scheduler
     logger.info("Application starting ...")
 
+    # 注册 TaskConsumer
+    registry.register(MesExecutor())
+
     # 初始化并启动 RayScheduler
     scheduler = RayScheduler()
     await scheduler.start()
     logger.info("RayScheduler started successfully")
+
+    # 解析配置文件并添加任务到调度器
+    try:
+        settings = get_settings()
+        logger.info("Loading configuration and scheduling tasks...")
+
+        # 为每个搜索引擎配置项创建任务
+        for search_item in settings.search_engine:
+            task = Task(
+                source="mes.search",  # 匹配 MesExecutor 的名称
+                args={
+                    "query": search_item.query,
+                    "engine": search_item.engine,
+                    "time_range": search_item.time_range,
+                },
+                interval=search_item.interval_seconds,  # 设置重复间隔
+            )
+
+            # 添加任务到调度器
+            scheduler.add_task(task)
+            logger.info(
+                "Scheduled search task: query='%s', engine='%s', interval=%ds",
+                search_item.query,
+                search_item.engine,
+                search_item.interval_seconds,
+            )
+
+        logger.info(
+            "Scheduled %d search tasks from configuration", len(settings.search_engine)
+        )
+
+    except Exception as e:
+        logger.error("Failed to load configuration or schedule tasks: %s", e)
+        # 继续启动，即使配置加载失败
 
     logger.info("Application started")
 

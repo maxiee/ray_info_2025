@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import heapq
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from .task import Task
@@ -190,6 +190,31 @@ class RayScheduler:
             self._log.debug("Executing task: %s", task)
             await src.consume(task)
             self._log.debug("Task completed successfully: %s", task)
+
+            # 检查是否需要重新调度（自动重复任务）
+            if task.interval is not None and task.interval > 0:
+                # 计算下次执行时间
+                next_schedule_at = datetime.now(timezone.utc) + timedelta(
+                    seconds=task.interval
+                )
+
+                # 创建新的任务（复用相同的参数，但生成新的 UUID）
+                next_task = Task(
+                    source=task.source,
+                    args=task.args.copy(),  # 复制参数字典
+                    schedule_at=next_schedule_at,
+                    interval=task.interval,  # 保持相同的间隔
+                )
+
+                # 添加到调度器
+                self.add_task(next_task)
+                self._log.debug(
+                    "Auto-rescheduled task: %s -> %s (interval=%ds)",
+                    task.uuid[:8],
+                    next_task.uuid[:8],
+                    task.interval,
+                )
+
         except Exception as e:
             self._log.exception("[fail] task %s from %s: %s", task.uuid, task.source, e)
         finally:

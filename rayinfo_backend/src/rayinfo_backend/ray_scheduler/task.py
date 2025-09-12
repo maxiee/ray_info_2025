@@ -18,6 +18,7 @@ class Task:
         args: 传入 Task 的参数，用于 TaskConsumer 消费时使用
         source: Task 创建时对应的 TaskConsumer 的 name
         schedule_at: Task 的调度时间戳，默认为当前时间
+        interval: 重复间隔秒数，如果设置则任务完成后会自动重新调度
     """
 
     def __init__(
@@ -26,6 +27,7 @@ class Task:
         args: Optional[Dict[str, Any]] = None,
         schedule_at: Optional[datetime] = None,
         uuid: Optional[str] = None,
+        interval: Optional[int] = None,
     ):
         """初始化 Task
 
@@ -34,11 +36,13 @@ class Task:
             args: 传入的参数字典，默认为空字典
             schedule_at: 调度时间，默认为当前 UTC 时间
             uuid: 任务唯一标识，默认自动生成
+            interval: 重复间隔秒数，如果设置则任务完成后会自动重新调度
         """
         self.uuid = uuid or str(uuid_lib.uuid4())
         self.args = args or {}
         self.source = source
         self.schedule_at = schedule_at or datetime.now(timezone.utc)
+        self.interval = interval
 
         # 确保 schedule_at 是时区感知的
         if self.schedule_at.tzinfo is None:
@@ -49,13 +53,14 @@ class Task:
         """将 Task 转换为字典，用于持久化或日志打印
 
         Returns:
-            包含 uuid、args、source、schedule_at 的字典
+            包含 uuid、args、source、schedule_at、interval 的字典
         """
         return {
             "uuid": self.uuid,
             "args": self.args,
             "source": self.source,
             "schedule_at": self.schedule_at.isoformat(),
+            "interval": self.interval,
         }
 
     @classmethod
@@ -78,6 +83,7 @@ class Task:
             args=data["args"],
             source=data["source"],
             schedule_at=schedule_at,
+            interval=data.get("interval"),
         )
 
     def __str__(self) -> str:
@@ -88,5 +94,5 @@ class Task:
         """详细字符串表示"""
         return (
             f"Task(uuid='{self.uuid}', source='{self.source}', "
-            f"args={self.args}, schedule_at={self.schedule_at})"
+            f"args={self.args}, schedule_at={self.schedule_at}, interval={self.interval})"
         )
