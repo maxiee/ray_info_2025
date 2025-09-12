@@ -138,7 +138,6 @@ async def get_status() -> dict[str, Any]:
         next_task_time = scheduler.get_next_task_time()
         if next_task_time:
             status["next_task_time"] = next_task_time.isoformat()
-
     return status
 
 
@@ -170,26 +169,6 @@ async def list_collectors_by_type():
         "collectors": {},
         "message": "Collector management removed with BaseCollector",
     }
-
-
-def _get_collector_display_name(collector_name: str) -> str:
-    """获取采集器的显示名称"""
-    display_names = {
-        "mes.search": "搜索引擎",
-        "weibo.home": "微博首页",
-        "rss.feed": "RSS订阅",
-    }
-    return display_names.get(collector_name, collector_name)
-
-
-def _get_instance_display_name(collector_name: str, param: str | None) -> str:
-    """获取实例的显示名称"""
-    if param is None:
-        # 普通采集器，使用采集器名称
-        return _get_collector_display_name(collector_name)
-    else:
-        # 参数化采集器，使用参数作为显示名称
-        return param
 
 
 @app.get("/trigger/{instance_id}", summary="手动触发采集器实例")
