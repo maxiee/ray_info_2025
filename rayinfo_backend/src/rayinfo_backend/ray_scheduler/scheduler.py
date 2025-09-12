@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import heapq
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from .task import Task
 from .registry import registry
+from .execution_manager import TaskExecutionManager
 
 
 class RayScheduler:
@@ -29,8 +31,15 @@ class RayScheduler:
     - _sem_by_source: 源级并发控制信号量
     """
 
-    def __init__(self):
-        """初始化调度器"""
+    def __init__(
+        self, enable_execution_tracking: bool = True, db_path: str = "rayinfo.db"
+    ):
+        """初始化调度器
+
+        Args:
+            enable_execution_tracking: 是否启用执行时间记录
+            db_path: 数据库文件路径
+        """
         # 内部堆队列（最小触发时间优先）
         # 结构：(when_ts: float, seq: int, task: Task)
         self._heap: List[Tuple[float, int, Task]] = []
@@ -47,6 +56,12 @@ class RayScheduler:
 
         # 序列号（确保同一触发时间下的稳定出队顺序）
         self._seq = 0
+
+        # 执行时间记录
+        self._enable_execution_tracking = enable_execution_tracking
+        self._execution_manager = None
+        if enable_execution_tracking:
+            self._execution_manager = TaskExecutionManager.get_instance(db_path)
 
         # 日志记录器
         self._log = logging.getLogger("rayinfo.ray_scheduler")
@@ -73,6 +88,90 @@ class RayScheduler:
             task.schedule_at,
             len(self._heap),
         )
+
+    def add_task_with_smart_schedule(
+        self,
+        task_source: str,
+        args: dict,
+        interval_seconds: int,
+        param_key: Optional[str] = None,
+    ) -> Task:
+        """智能调度添加任务
+
+        根据上次执行时间和间隔计算真正的调度时间，然后添加任务。
+        这是针对您需求设计的智能调度方法。
+
+        Args:
+            task_source: 任务源名称
+            args: 任务参数
+            interval_seconds: 调度间隔（秒）
+            param_key: 参数键，用于区分参数化任务。如果未提供，将从args中自动提取
+
+        Returns:
+            创建的任务对象
+        """
+        # 如果没有提供参数键，从args中提取
+        if param_key is None and self._execution_manager:
+            param_key = self._execution_manager._extract_param_key(args)
+
+        if not self._enable_execution_tracking or not self._execution_manager:
+            # 如果未启用执行时间跟踪，立即调度
+            schedule_at = datetime.now(timezone.utc)
+        else:
+            # 计算智能调度时间
+            next_timestamp = self._execution_manager.calculate_next_schedule_time(
+                task_source, interval_seconds, param_key
+            )
+            schedule_at = datetime.fromtimestamp(next_timestamp, timezone.utc)
+
+        # 创建任务
+        task = Task(
+            source=task_source,
+            args=args,
+            schedule_at=schedule_at,
+            interval=interval_seconds,  # 保存间隔以支持自动重复
+        )
+
+        # 添加到调度器
+        self.add_task(task)
+
+        self._log.info(
+            "智能调度任务 source=%s param=%s schedule_at=%s",
+            task_source,
+            param_key or "(empty)",
+            schedule_at,
+        )
+
+        return task
+
+    def _extract_param_key_from_task(self, task: Task) -> Optional[str]:
+        """从任务中提取参数键，用于执行时间记录
+
+        Args:
+            task: 任务实例
+
+        Returns:
+            参数键字符串，如果无法提取则返回 None
+        """
+        if not task.args:
+            return None
+
+        # 尝试从任务参数中提取有意义的键
+        # 通常使用 source（来源）相关的参数作为键
+        if "source" in task.args:
+            return str(task.args["source"])
+        elif "url" in task.args:
+            return str(task.args["url"])
+        elif "id" in task.args:
+            return str(task.args["id"])
+        elif "name" in task.args:
+            return str(task.args["name"])
+        else:
+            # 如果没有明显的键，使用所有参数的哈希
+            import hashlib
+
+            param_str = json.dumps(task.args, sort_keys=True)
+            return hashlib.md5(param_str.encode()).hexdigest()[:16]
 
     async def start(self) -> None:
         """启动调度器主循环（幂等）"""
@@ -190,6 +289,15 @@ class RayScheduler:
             self._log.debug("Executing task: %s", task)
             await src.consume(task)
             self._log.debug("Task completed successfully: %s", task)
+
+            # 记录任务执行时间
+            if self._enable_execution_tracking and self._execution_manager:
+                try:
+                    # 根据任务参数提取参数键（如果有的话）
+                    param_key = self._extract_param_key_from_task(task)
+                    self._execution_manager.record_execution(task.source, param_key)
+                except Exception as e:
+                    self._log.error("记录任务执行时间失败: %s", e)
 
             # 检查是否需要重新调度（自动重复任务）
             if task.interval is not None and task.interval > 0:

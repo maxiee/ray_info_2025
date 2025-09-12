@@ -10,7 +10,18 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import threading
 
-from sqlalchemy import Column, String, Text, DateTime, Integer, JSON, Float, Boolean, ForeignKey, create_engine
+from sqlalchemy import (
+    Column,
+    String,
+    Text,
+    DateTime,
+    Integer,
+    JSON,
+    Float,
+    Boolean,
+    ForeignKey,
+    create_engine,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -19,62 +30,44 @@ Base = declarative_base()
 
 
 class CollectorExecutionState(Base):
-    """采集器执行状态表
-    
-    用于存储每个采集器实例的最后执行时间，实现断点续传功能。
-    支持普通采集器和参数化采集器两种模式。
-    
+    """采集器/任务执行状态表
+
+    用于存储每个任务的最后执行时间，实现智能调度功能。
+    支持普通任务和参数化任务两种模式。
+
     字段说明：
-    - collector_name: 采集器名称（如 weibo.home）
-    - param_key: 参数键，用于区分参数化采集器的不同实例
+    - collector_name: 任务源名称（如 weibo.home）
+    - param_key: 参数键，用于区分参数化任务的不同实例
     - last_execution_time: 最后执行时间戳（Unix时间戳）
     - created_at: 创建时间
     - updated_at: 更新时间
     - execution_count: 执行次数统计
     """
-    
+
     __tablename__ = "collector_execution_state"
-    
-    # 复合主键：采集器名称 + 参数键
+
+    # 复合主键：任务源名称 + 参数键
     collector_name = Column(
-        String, 
-        primary_key=True, 
-        comment="采集器名称，如 weibo.home"
+        String, primary_key=True, comment="任务源名称，如 weibo.home"
     )
     param_key = Column(
-        String, 
-        primary_key=True, 
-        nullable=False,  # 不允许NULL，普通采集器使用空字符串
+        String,
+        primary_key=True,
+        nullable=False,  # 不允许NULL，普通任务使用空字符串
         default="",  # 默认为空字符串
-        comment="参数键，普通采集器为空字符串"
+        comment="参数键，普通任务为空字符串",
     )
-    
+
     # 时间戳字段
     last_execution_time = Column(
-        Float, 
-        nullable=False, 
-        index=True, 
-        comment="最后执行时间戳（Unix时间戳）"
+        Float, nullable=False, index=True, comment="最后执行时间戳（Unix时间戳）"
     )
-    created_at = Column(
-        Float, 
-        nullable=False, 
-        comment="创建时间戳"
-    )
-    updated_at = Column(
-        Float, 
-        nullable=False, 
-        comment="更新时间戳"
-    )
-    
+    created_at = Column(Float, nullable=False, comment="创建时间戳")
+    updated_at = Column(Float, nullable=False, comment="更新时间戳")
+
     # 统计字段
-    execution_count = Column(
-        Integer, 
-        nullable=False, 
-        default=0, 
-        comment="执行次数统计"
-    )
-    
+    execution_count = Column(Integer, nullable=False, default=0, comment="执行次数统计")
+
     def __repr__(self) -> str:
         return (
             f"<CollectorExecutionState("
@@ -82,7 +75,7 @@ class CollectorExecutionState(Base):
             f"param_key={self.param_key}, "
             f"execution_count={self.execution_count})>"
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
         return {
@@ -92,6 +85,88 @@ class CollectorExecutionState(Base):
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "execution_count": self.execution_count,
+        }
+
+
+class ScheduledTask(Base):
+    """调度任务表
+
+    用于持久化调度器中的待执行任务，实现断点续传功能。
+    存储任务的完整信息，支持冷启动时恢复任务队列。
+
+    字段说明：
+    - uuid: 任务唯一标识符，主键
+    - source: 任务源名称
+    - args: 任务参数（JSON格式）
+    - schedule_at: 计划执行时间
+    - interval: 重复间隔秒数（可选）
+    - status: 任务状态（pending/running/completed/failed）
+    - created_at: 创建时间
+    - updated_at: 更新时间
+    """
+
+    __tablename__ = "scheduled_tasks"
+
+    # 主键
+    uuid = Column(String, primary_key=True, comment="任务唯一标识符")
+
+    # 任务基本信息
+    source = Column(String, nullable=False, index=True, comment="任务源名称")
+    args = Column(
+        JSON, nullable=False, default=lambda: {}, comment="任务参数（JSON格式）"
+    )
+
+    # 调度信息
+    schedule_at = Column(DateTime, nullable=False, index=True, comment="计划执行时间")
+    interval = Column(Integer, nullable=True, comment="重复间隔秒数（可选）")
+
+    # 状态信息
+    status = Column(
+        String,
+        nullable=False,
+        default="pending",
+        index=True,
+        comment="任务状态：pending/running/completed/failed",
+    )
+
+    # 时间戳
+    created_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, comment="创建时间"
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        comment="更新时间",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ScheduledTask("
+            f"uuid={self.uuid[:8]}, "
+            f"source={self.source}, "
+            f"status={self.status}, "
+            f"schedule_at={self.schedule_at})>"
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            "uuid": self.uuid,
+            "source": self.source,
+            "args": self.args,
+            "schedule_at": (
+                self.schedule_at.isoformat() if self.schedule_at is not None else None
+            ),
+            "interval": self.interval,
+            "status": self.status,
+            "created_at": (
+                self.created_at.isoformat() if self.created_at is not None else None
+            ),
+            "updated_at": (
+                self.updated_at.isoformat() if self.updated_at is not None else None
+            ),
         }
 
 
@@ -163,50 +238,47 @@ class RawInfoItem(Base):
 
 class ArticleReadStatus(Base):
     """资讯已读状态表
-    
+
     用于存储用户对资讯的已读状态，支持手动标记已读/未读。
-    
+
     字段说明：
     - post_id: 外键，关联到 raw_info_items 表的 post_id
     - is_read: 已读状态，默认为 False
     - read_at: 标记已读的时间戳，未读时为 None
     - updated_at: 最后更新时间
     """
-    
+
     __tablename__ = "article_read_status"
-    
+
     # 主键：使用 post_id 作为主键，与 raw_info_items 一对一关联
     post_id = Column(
-        String, 
-        ForeignKey("raw_info_items.post_id", ondelete="CASCADE"), 
+        String,
+        ForeignKey("raw_info_items.post_id", ondelete="CASCADE"),
         primary_key=True,
-        comment="资讯唯一标识符，外键关联到raw_info_items表"
+        comment="资讯唯一标识符，外键关联到raw_info_items表",
     )
-    
+
     # 已读状态
     is_read = Column(
-        Boolean, 
-        nullable=False, 
-        default=False, 
+        Boolean,
+        nullable=False,
+        default=False,
         index=True,
-        comment="已读状态：True=已读，False=未读"
+        comment="已读状态：True=已读，False=未读",
     )
-    
+
     # 时间戳字段
     read_at = Column(
-        DateTime, 
-        nullable=True, 
-        index=True,
-        comment="标记已读的时间戳，未读时为None"
+        DateTime, nullable=True, index=True, comment="标记已读的时间戳，未读时为None"
     )
     updated_at = Column(
-        DateTime, 
-        nullable=False, 
+        DateTime,
+        nullable=False,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
-        comment="最后更新时间"
+        comment="最后更新时间",
     )
-    
+
     def __repr__(self) -> str:
         return (
             f"<ArticleReadStatus("
@@ -214,14 +286,16 @@ class ArticleReadStatus(Base):
             f"is_read={self.is_read}, "
             f"read_at={self.read_at})>"
         )
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
         return {
             "post_id": self.post_id,
             "is_read": self.is_read,
-            "read_at": self.read_at.isoformat() if self.read_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "read_at": self.read_at.isoformat() if self.read_at is not None else None,
+            "updated_at": (
+                self.updated_at.isoformat() if self.updated_at is not None else None
+            ),
         }
 
 
@@ -284,27 +358,34 @@ class DatabaseManager:
     def create_tables(self):
         """创建所有表结构"""
         Base.metadata.create_all(self.engine)
-        
+
         # 为collector_execution_state表创建索引以优化查询性能
         try:
             from sqlalchemy import text
+
             with self.engine.connect() as conn:
                 # 检查索引是否存在，避免重复创建
-                conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS idx_collector_execution_time "
-                    "ON collector_execution_state(collector_name, last_execution_time)"
-                ))
-                
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_collector_execution_time "
+                        "ON collector_execution_state(collector_name, last_execution_time)"
+                    )
+                )
+
                 # 为article_read_status表创建索引
-                conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS idx_article_read_status_is_read "
-                    "ON article_read_status(is_read)"
-                ))
-                conn.execute(text(
-                    "CREATE INDEX IF NOT EXISTS idx_article_read_status_read_at "
-                    "ON article_read_status(read_at)"
-                ))
-                
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_article_read_status_is_read "
+                        "ON article_read_status(is_read)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_article_read_status_read_at "
+                        "ON article_read_status(read_at)"
+                    )
+                )
+
                 conn.commit()
         except Exception as e:
             # 如果索引已存在或创建失败，记录但不中断

@@ -54,23 +54,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
 
         # 为每个搜索引擎配置项创建任务
         for search_item in settings.search_engine:
-            task = Task(
-                source="mes.search",  # 匹配 MesExecutor 的名称
+            # 使用智能调度方法，根据执行历史计算调度时间
+            task = scheduler.add_task_with_smart_schedule(
+                task_source="mes.search",  # 匹配 MesExecutor 的名称
                 args={
                     "query": search_item.query,
                     "engine": search_item.engine,
                     "time_range": search_item.time_range,
                 },
-                interval=search_item.interval_seconds,  # 设置重复间隔
+                interval_seconds=search_item.interval_seconds,  # 调度间隔
             )
 
-            # 添加任务到调度器
-            scheduler.add_task(task)
             logger.info(
-                "Scheduled search task: query='%s', engine='%s', interval=%ds",
+                "Scheduled search task: query='%s', engine='%s', interval=%ds, schedule_at=%s",
                 search_item.query,
                 search_item.engine,
                 search_item.interval_seconds,
+                task.schedule_at,
             )
 
         logger.info(
