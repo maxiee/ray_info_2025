@@ -1,14 +1,13 @@
 """MES 命令执行器 - 继承自 BaseTaskConsumer 的 MES 任务消费者
 
-这个模块实现了对 mes CLI 命令的协程安全调用，确保同一时间只有一个 mes 命令在执行。
-这对于避免搜索引擎 API 的并发调用限制和提高系统稳定性是非常重要的。
+该模块封装了对 mes CLI 的异步调用，确保同一时间只有一个命令在运行，
+避免搜索引擎 API 的并发调用限制并提升系统稳定性。
 
 主要特性：
 - 继承自 BaseTaskConsumer，遵循 RayScheduler 调度器规范
-- 使用 asyncio.Lock 确保 mes 命令的串行执行
+- 通过事件循环感知的 asyncio.Lock 保证串行执行
 - 保持原有的 JSON 解析和错误处理逻辑
 - 支持配额检测和异常处理
-- 线程安全的单例模式设计
 """
 
 from __future__ import annotations
@@ -27,43 +26,24 @@ logger = logging.getLogger("rayinfo.collector.mes.executor")
 
 
 class MesExecutor(BaseTaskConsumer):
-    """MES 命令执行器 - 继承自 BaseTaskConsumer 的 MES 任务消费者
-
-    这个类实现了单例模式，确保整个应用中只有一个 MesExecutor 实例。
-    使用 asyncio.Lock 来保证同一时间只有一个 mes 命令在执行。
-
-    继承自 BaseTaskConsumer，遵循 RayScheduler 调度器规范。
-    """
-
-    _instance: Optional["MesExecutor"] = None
-    _lock = asyncio.Lock()
-
-    def __new__(cls, *args, **kwargs) -> "MesExecutor":
-        """单例模式实现"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    """MES 命令执行器，负责通过 CLI 执行搜索任务"""
 
     def __init__(self, name: str = "mes.search", concurrent_count: int = 1):
-        """初始化执行器
+        super().__init__(name, concurrent_count)
+        self._mes_lock: Optional[asyncio.Lock] = None
+        self._mes_lock_loop: Optional[asyncio.AbstractEventLoop] = None
+        logger.info(
+            "MesExecutor 初始化完成: name=%s, concurrent_count=%s",
+            name,
+            concurrent_count,
+        )
 
-        Args:
-            name: TaskConsumer 名称，默认为 "mes.search"
-            concurrent_count: 并发数限制，默认为 1（由于 mes 命令需要串行执行）
-        """
-        if not hasattr(self, "_initialized") or not self._initialized:
-            # 调用父类初始化
-            super().__init__(name, concurrent_count)
-
-            # 初始化 mes 执行相关属性
+    def _ensure_mes_lock(self) -> asyncio.Lock:
+        loop = asyncio.get_running_loop()
+        if self._mes_lock is None or self._mes_lock_loop is not loop:
             self._mes_lock = asyncio.Lock()
-            self._initialized = True
-            logger.info(
-                "MesExecutor 初始化完成: name=%s, concurrent_count=%s",
-                name,
-                concurrent_count,
-            )
+            self._mes_lock_loop = loop
+        return self._mes_lock
 
     async def consume(self, task: Task) -> None:
         """消费一个 MES 搜索任务
@@ -148,7 +128,9 @@ class MesExecutor(BaseTaskConsumer):
         Raises:
             CollectorRetryableException: 当 API 配额超限时抛出
         """
-        async with self._mes_lock:
+        lock = self._ensure_mes_lock()
+
+        async with lock:
             logger.info(
                 "开始执行 mes 命令 (已获得锁): query=%s, engine=%s, time_range=%s",
                 query,

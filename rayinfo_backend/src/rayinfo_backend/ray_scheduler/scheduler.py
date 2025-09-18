@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import heapq
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
@@ -112,7 +111,7 @@ class RayScheduler:
         """
         # 如果没有提供参数键，从args中提取
         if param_key is None and self._execution_manager:
-            param_key = self._execution_manager._extract_param_key(args)
+            param_key = self._execution_manager.build_param_key(args)
 
         if not self._enable_execution_tracking or not self._execution_manager:
             # 如果未启用执行时间跟踪，立即调度
@@ -156,22 +155,7 @@ class RayScheduler:
         if not task.args:
             return None
 
-        # 尝试从任务参数中提取有意义的键
-        # 通常使用 source（来源）相关的参数作为键
-        if "source" in task.args:
-            return str(task.args["source"])
-        elif "url" in task.args:
-            return str(task.args["url"])
-        elif "id" in task.args:
-            return str(task.args["id"])
-        elif "name" in task.args:
-            return str(task.args["name"])
-        else:
-            # 如果没有明显的键，使用所有参数的哈希
-            import hashlib
-
-            param_str = json.dumps(task.args, sort_keys=True)
-            return hashlib.md5(param_str.encode()).hexdigest()[:16]
+        return TaskExecutionManager.build_param_key(task.args)
 
     async def start(self) -> None:
         """启动调度器主循环（幂等）"""

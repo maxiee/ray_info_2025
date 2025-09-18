@@ -64,35 +64,28 @@ class TaskExecutionManager:
         self._initialized = True
         logger.info("任务执行时间管理器初始化完成")
 
-    def _extract_param_key(self, args: Dict[str, Any]) -> str:
-        """从任务参数中提取参数键
-
-        Args:
-            args: 任务参数字典
-
-        Returns:
-            参数键字符串
-        """
+    @staticmethod
+    def build_param_key(args: Dict[str, Any]) -> str:
+        """根据任务参数生成稳定的参数键"""
         if not args:
             return ""
 
         # 尝试从任务参数中提取有意义的键
-        # 通常使用 source（来源）相关的参数作为键
         if "source" in args:
             return str(args["source"])
-        elif "url" in args:
+        if "url" in args:
             return str(args["url"])
-        elif "id" in args:
+        if "id" in args:
             return str(args["id"])
-        elif "name" in args:
+        if "name" in args:
             return str(args["name"])
-        else:
-            # 如果没有明显的键，使用所有参数的哈希
-            import hashlib
-            import json
 
-            param_str = json.dumps(args, sort_keys=True)
-            return hashlib.md5(param_str.encode()).hexdigest()[:16]
+        # 如果没有明显的键，使用所有参数的哈希
+        import hashlib
+        import json
+
+        param_str = json.dumps(args, sort_keys=True)
+        return hashlib.md5(param_str.encode()).hexdigest()[:16]
 
     def record_execution(
         self,

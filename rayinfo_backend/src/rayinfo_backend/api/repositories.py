@@ -148,37 +148,32 @@ class ArticleRepository:
 
             return result
 
-    def _apply_filters(
-        self, query, filters: ArticleFilters, exclude_query: bool = False
+    def _apply_common_filters(
+        self, query, filters: ArticleFilters, *, exclude_query: bool = False
     ):
-        """应用筛选条件到查询
-
-        Args:
-            query: SQLAlchemy查询对象
-            filters: 筛选参数
-            exclude_query: 是否排除query字段筛选
-
-        Returns:
-            应用筛选后的查询对象
-        """
-        # 来源筛选
+        """应用通用筛选条件"""
         if filters.source:
             query = query.filter(RawInfoItem.source == filters.source)
 
-        # 关键词筛选（精确匹配查询字段）
         if filters.query and not exclude_query:
             query = query.filter(RawInfoItem.query == filters.query)
 
-        # 日期范围筛选
         if filters.start_date:
             query = query.filter(RawInfoItem.collected_at >= filters.start_date)
 
         if filters.end_date:
             query = query.filter(RawInfoItem.collected_at <= filters.end_date)
 
-        # 如果需要已读状态筛选，使用带已读状态的查询方法
+        return query
+
+    def _apply_filters(
+        self, query, filters: ArticleFilters, exclude_query: bool = False
+    ):
+        """应用筛选条件到原始资讯查询"""
+        query = self._apply_common_filters(query, filters, exclude_query=exclude_query)
+
         if filters.read_status and filters.read_status != "all":
-            # 此时应该使用 get_articles_with_read_status 方法
+            # read_status 依赖已读状态表的 join，保持与当前调用路径兼容
             pass
 
         return query
@@ -303,20 +298,7 @@ class ArticleRepository:
         Returns:
             应用筛选后的查询对象
         """
-        # 来源筛选
-        if filters.source:
-            query = query.filter(RawInfoItem.source == filters.source)
-
-        # 关键词筛选（精确匹配查询字段）
-        if filters.query and not exclude_query:
-            query = query.filter(RawInfoItem.query == filters.query)
-
-        # 日期范围筛选
-        if filters.start_date:
-            query = query.filter(RawInfoItem.collected_at >= filters.start_date)
-
-        if filters.end_date:
-            query = query.filter(RawInfoItem.collected_at <= filters.end_date)
+        query = self._apply_common_filters(query, filters, exclude_query=exclude_query)
 
         # 已读状态筛选
         if filters.read_status:
