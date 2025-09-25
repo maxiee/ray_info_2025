@@ -1,23 +1,15 @@
-"""RayScheduler: 基于 AsyncIO 的异步任务调度框架
+"""RayScheduler 组件集合
 
-主要组件:
+包含 RayInfo 后端的调度相关基础设施：
 - Task: 调度的最小单元
-- BaseTaskConsumer: 任务生产者/消费者基类
-- TaskConsumerRegistry: 任务消费者注册表
-- RayScheduler: 核心调度器
-- TaskExecutionManager: 执行时间管理器
-- JobKind, make_job_id: 任务类型和ID生成
+- BaseTaskConsumer: 任务消费者基类
+- TaskConsumerRegistry: 统一的任务注册表
+- RayScheduler: 基于 1s tick 的简化调度器
+- TaskExecutionManager: 任务执行记录管理
+- JobKind / make_job_id: 任务 ID 辅助工具
 
-核心特性:
-- 基于 asyncio 的时间驱动调度
-- 源级并发控制
-- 最小堆实现的优先级队列
-- 可中断的等待机制
-- 失败任务日志记录
-- 智能调度和执行时间追踪
-
-注意：CollectorTaskConsumer 和相关适配器已被移除
-CollectorStateManager已被TaskExecutionManager替代
+当前实现强调数据驱动与可读性，任务在启动时加载入内存字典，
+由定时循环按需触发执行。
 """
 
 from .task import Task

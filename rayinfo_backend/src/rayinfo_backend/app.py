@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Protocol
 
 from fastapi import FastAPI, HTTPException
@@ -20,7 +20,6 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from rayinfo_backend.collectors.mes.mes_executor import MesExecutor
 from rayinfo_backend.ray_scheduler import registry
-from rayinfo_backend.ray_scheduler.task import Task
 from rayinfo_backend.config.settings import get_settings
 
 from .utils.logging import setup_logging
@@ -39,47 +38,37 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
     global scheduler
     logger.info("Application starting ...")
 
+    # 解析配置文件（尽早进行，以便初始化数据库路径等依赖）
+    settings = get_settings()
+
     # 注册 TaskConsumer
     registry.register(MesExecutor())
 
-    # 初始化并启动 RayScheduler
-    scheduler = RayScheduler()
-    await scheduler.start()
-    logger.info("RayScheduler started successfully")
+    # 准备调度任务定义
+    task_definitions = [
+        {
+            "source": "mes.search",
+            "interval_seconds": item.interval_seconds,
+            "args": {
+                "query": item.query,
+                "engine": item.engine,
+                "time_range": item.time_range,
+            },
+        }
+        for item in settings.search_engine
+    ]
 
-    # 解析配置文件并添加任务到调度器
+    # 初始化调度器并加载任务表
+    scheduler = RayScheduler(db_path=settings.storage.db_path)
     try:
-        settings = get_settings()
-        logger.info("Loading configuration and scheduling tasks...")
-
-        # 为每个搜索引擎配置项创建任务
-        for search_item in settings.search_engine:
-            # 使用智能调度方法，根据执行历史计算调度时间
-            task = scheduler.add_task_with_smart_schedule(
-                task_source="mes.search",  # 匹配 MesExecutor 的名称
-                args={
-                    "query": search_item.query,
-                    "engine": search_item.engine,
-                    "time_range": search_item.time_range,
-                },
-                interval_seconds=search_item.interval_seconds,  # 调度间隔
-            )
-
-            logger.info(
-                "Scheduled search task: query='%s', engine='%s', interval=%ds, schedule_at=%s",
-                search_item.query,
-                search_item.engine,
-                search_item.interval_seconds,
-                task.schedule_at,
-            )
-
+        scheduler.load_tasks(task_definitions)
+        await scheduler.start()
         logger.info(
-            "Scheduled %d search tasks from configuration", len(settings.search_engine)
+            "RayScheduler started with %d tasks", scheduler.get_queue_size()
         )
-
-    except Exception as e:
-        logger.error("Failed to load configuration or schedule tasks: %s", e)
-        # 继续启动，即使配置加载失败
+    except Exception as exc:
+        logger.exception("Failed to initialise scheduler: %s", exc)
+        raise
 
     logger.info("Application started")
 
@@ -128,13 +117,21 @@ async def get_status() -> dict[str, Any]:
     status: dict[str, Any] = {
         "message": "RayInfo Backend Service is running",
         "scheduler_type": "RayScheduler",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "scheduler_running": scheduler.is_running() if scheduler else False,
-        "registered_jobs": 0,  # TODO: 从注册表获取
-        "pending_tasks": scheduler.get_queue_size() if scheduler else 0,
+        "registered_jobs": 0,
+        "pending_tasks": 0,
     }
 
     if scheduler:
+        snapshot = scheduler.get_tasks_snapshot()
+        status["registered_jobs"] = len(snapshot)
+
+        now = datetime.now(timezone.utc)
+        status["pending_tasks"] = sum(
+            1 for entry in snapshot.values() if entry["next_run_at"] <= now
+        )
+
         next_task_time = scheduler.get_next_task_time()
         if next_task_time:
             status["next_task_time"] = next_task_time.isoformat()
