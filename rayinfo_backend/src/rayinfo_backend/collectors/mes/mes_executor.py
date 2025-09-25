@@ -22,12 +22,11 @@ logger = logging.getLogger("rayinfo.collector.mes.executor")
 class MesExecutor(BaseTaskConsumer):
     """MES 命令执行器，负责通过 CLI 执行搜索任务"""
 
-    def __init__(self, name: str = "mes.search", concurrent_count: int = 1):
-        super().__init__(name, concurrent_count)
+    def __init__(self, name: str = "mes.search"):
+        super().__init__(name)
         logger.info(
-            "MesExecutor 初始化完成: name=%s, concurrent_count=%s",
+            "MesExecutor 初始化完成: name=%s",
             name,
-            concurrent_count,
         )
 
     async def consume(self, task: Task) -> None:
