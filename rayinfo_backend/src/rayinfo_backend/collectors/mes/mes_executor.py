@@ -1,13 +1,7 @@
-"""MES 命令执行器 - 继承自 BaseTaskConsumer 的 MES 任务消费者
+"""MES 命令执行器
 
-该模块封装了对 mes CLI 的异步调用，确保同一时间只有一个命令在运行，
-避免搜索引擎 API 的并发调用限制并提升系统稳定性。
-
-主要特性：
-- 继承自 BaseTaskConsumer，遵循 RayScheduler 调度器规范
-- 通过事件循环感知的 asyncio.Lock 保证串行执行
-- 保持原有的 JSON 解析和错误处理逻辑
-- 支持配额检测和异常处理
+调度器串行运行任务，因此这里不再需要额外的锁控制，
+尽量保持实现简单直接。
 """
 
 from __future__ import annotations
@@ -30,20 +24,11 @@ class MesExecutor(BaseTaskConsumer):
 
     def __init__(self, name: str = "mes.search", concurrent_count: int = 1):
         super().__init__(name, concurrent_count)
-        self._mes_lock: Optional[asyncio.Lock] = None
-        self._mes_lock_loop: Optional[asyncio.AbstractEventLoop] = None
         logger.info(
             "MesExecutor 初始化完成: name=%s, concurrent_count=%s",
             name,
             concurrent_count,
         )
-
-    def _ensure_mes_lock(self) -> asyncio.Lock:
-        loop = asyncio.get_running_loop()
-        if self._mes_lock is None or self._mes_lock_loop is not loop:
-            self._mes_lock = asyncio.Lock()
-            self._mes_lock_loop = loop
-        return self._mes_lock
 
     async def consume(self, task: Task) -> None:
         """消费一个 MES 搜索任务
@@ -114,9 +99,6 @@ class MesExecutor(BaseTaskConsumer):
     ) -> List[Dict[str, Any]]:
         """执行 mes 命令并解析结果
 
-        这个方法使用 asyncio.Lock 确保同一时间只有一个 mes 命令在执行。
-        其他并发调用将等待当前命令完成。
-
         Args:
             query: 搜索查询关键词
             engine: 搜索引擎名称 (google, duckduckgo, bing 等)
@@ -128,35 +110,30 @@ class MesExecutor(BaseTaskConsumer):
         Raises:
             CollectorRetryableException: 当 API 配额超限时抛出
         """
-        lock = self._ensure_mes_lock()
+        logger.info(
+            "开始执行 mes 命令: query=%s, engine=%s, time_range=%s",
+            query,
+            engine,
+            time_range,
+        )
 
-        async with lock:
+        try:
+            result = await self._run_mes_internal(query, engine, time_range)
             logger.info(
-                "开始执行 mes 命令 (已获得锁): query=%s, engine=%s, time_range=%s",
+                "mes 命令执行完成: query=%s, engine=%s, 结果数量=%d",
                 query,
                 engine,
-                time_range,
+                len(result),
             )
-
-            try:
-                result = await self._run_mes_internal(query, engine, time_range)
-                logger.info(
-                    "mes 命令执行完成: query=%s, engine=%s, 结果数量=%d",
-                    query,
-                    engine,
-                    len(result),
-                )
-                return result
-            except Exception as e:
-                logger.error(
-                    "mes 命令执行失败: query=%s, engine=%s, error=%s",
-                    query,
-                    engine,
-                    str(e),
-                )
-                raise
-            finally:
-                logger.debug("释放 mes 命令执行锁")
+            return result
+        except Exception as e:
+            logger.error(
+                "mes 命令执行失败: query=%s, engine=%s, error=%s",
+                query,
+                engine,
+                str(e),
+            )
+            raise
 
     async def _run_mes_internal(
         self, query: str, engine: str, time_range: Optional[str] = None
