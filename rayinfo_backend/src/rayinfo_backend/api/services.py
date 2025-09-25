@@ -116,9 +116,16 @@ class ArticleService:
         has_next = filters.page < total_pages
         has_prev = filters.page > 1
 
-        # 转换为响应模型
+        # 批量获取已读状态并转换为响应模型
+        read_status_map = self.repository.get_read_status_map(
+            [article.post_id for article in articles]
+        )
+
         article_responses = [
-            self._convert_to_article_response(article) for article in articles
+            self._convert_to_article_with_status_response(
+                article, read_status_map.get(article.post_id)
+            )
+            for article in articles
         ]
 
         pagination_info = PaginationInfo(

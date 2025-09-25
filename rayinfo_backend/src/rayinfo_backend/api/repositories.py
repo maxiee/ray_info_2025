@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, Sequence
 from sqlalchemy import func, desc, or_
 
 from ..models.info_item import RawInfoItem, ArticleReadStatus, DatabaseManager
@@ -250,6 +250,29 @@ class ArticleRepository:
                 .filter(ArticleReadStatus.post_id == post_id)
                 .first()
             )
+
+    def get_read_status_map(
+        self, post_ids: Sequence[str]
+    ) -> Dict[str, ArticleReadStatus]:
+        """批量获取资讯的已读状态映射
+
+        Args:
+            post_ids: 资讯ID序列
+
+        Returns:
+            Dict[str, ArticleReadStatus]: 以资讯ID为键的已读状态映射
+        """
+        if not post_ids:
+            return {}
+
+        with self.db_manager.get_session() as session:
+            statuses = (
+                session.query(ArticleReadStatus)
+                .filter(ArticleReadStatus.post_id.in_(list(post_ids)))
+                .all()
+            )
+
+            return {status.post_id: status for status in statuses}
 
     def get_articles_with_read_status(
         self, filters: ArticleFilters
