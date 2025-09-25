@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Depends, status, Path
@@ -359,10 +359,10 @@ async def list_collectors_by_type():
         dict: 按采集器类型分组的实例信息
     """
     instances = instance_manager.list_all_instances()
-    collectors_by_type = {}
+    collectors_by_type: dict[str, dict[str, Any]] = {}
 
     for instance_id, instance_info in instances.items():
-        collector_name = instance_info["collector_name"]
+        collector_name = instance_info.collector_name
 
         if collector_name not in collectors_by_type:
             collectors_by_type[collector_name] = {
@@ -372,22 +372,17 @@ async def list_collectors_by_type():
                 "instances": [],
             }
 
-        # 添加实例信息
-        instance_detail = {
-            "instance_id": instance_id,
-            "param": instance_info.get("param"),
-            "display_name": _get_instance_display_name(
-                collector_name, instance_info.get("param")
-            ),
-            "status": instance_info.get("status"),
-            "health_score": instance_info.get("health_score"),
-            "run_count": instance_info.get("run_count", 0),
-            "error_count": instance_info.get("error_count", 0),
-            "last_run": instance_info.get("last_run"),
-            "created_at": instance_info.get("created_at"),
-        }
+        instance_payload = instance_info.to_dict()
+        instance_payload.update(
+            {
+                "instance_id": instance_id,
+                "display_name": _get_instance_display_name(
+                    collector_name, instance_info.param
+                ),
+            }
+        )
 
-        collectors_by_type[collector_name]["instances"].append(instance_detail)
+        collectors_by_type[collector_name]["instances"].append(instance_payload)
         collectors_by_type[collector_name]["total_instances"] += 1
 
     return {
