@@ -21,7 +21,7 @@ from ..schemas import (
     SourcesResponse,
 )
 from ..services import ArticleService, ReadStatusService
-from ...utils.instance_id import instance_manager
+from ...utils.task_catalog import task_catalog
 
 router = APIRouter(prefix="/api/v1", tags=["articles"])
 
@@ -61,7 +61,7 @@ async def get_articles(
 
     try:
         if instance_id:
-            instance = instance_manager.get_instance(instance_id)
+            instance = task_catalog.get_instance(instance_id)
             if instance:
                 source = instance.collector.name
                 if instance.param:
@@ -280,7 +280,7 @@ async def get_article_detail(
 async def list_collectors_by_type():
     """按采集器类型分组列出采集器实例。"""
 
-    instances = instance_manager.list_all_instances()
+    instances = task_catalog.list_instances()
     collectors_by_type: dict[str, dict[str, Any]] = {}
 
     for instance_id, instance_info in instances.items():

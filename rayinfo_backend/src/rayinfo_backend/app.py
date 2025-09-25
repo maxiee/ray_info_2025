@@ -22,20 +22,17 @@ from rayinfo_backend.collectors.mes.mes_executor import MesExecutor
 from rayinfo_backend.ray_scheduler import registry
 from rayinfo_backend.config.settings import get_settings
 
+from . import state
 from .utils.logging import setup_logging
 from .api.v1 import router as api_v1_router
 from .ray_scheduler import RayScheduler
+from .utils.task_catalog import task_catalog
 
 logger = setup_logging()
-
-# 全局调度器实例
-scheduler: RayScheduler | None = None
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 兼容)
     """应用生命周期：启动调度器 & 关闭清理。"""
-    global scheduler
     logger.info("Application starting ...")
 
     # 解析配置文件（尽早进行，以便初始化数据库路径等依赖）
@@ -60,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
 
     # 初始化调度器并加载任务表
     scheduler = RayScheduler(db_path=settings.storage.db_path)
+    state.set_scheduler(scheduler)
     try:
         scheduler.load_tasks(task_definitions)
         await scheduler.start()
@@ -68,6 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
         )
     except Exception as exc:
         logger.exception("Failed to initialise scheduler: %s", exc)
+        state.set_scheduler(None)
         raise
 
     logger.info("Application started")
@@ -76,10 +75,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:  # noqa: D401 (fastapi 
         yield
     finally:
         logger.info("Application shutting down ...")
-        if scheduler:
-            await scheduler.stop()
+        active_scheduler = state.get_scheduler()
+        if active_scheduler:
+            await active_scheduler.stop()
             logger.info("RayScheduler stopped.")
-            scheduler = None
+            state.set_scheduler(None)
 
 
 app = FastAPI(
@@ -114,17 +114,21 @@ async def get_status() -> dict[str, Any]:
     返回:
         包含系统状态的字典
     """
+    current_scheduler = state.get_scheduler()
+
     status: dict[str, Any] = {
         "message": "RayInfo Backend Service is running",
         "scheduler_type": "RayScheduler",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "scheduler_running": scheduler.is_running() if scheduler else False,
+        "scheduler_running": current_scheduler.is_running()
+        if current_scheduler
+        else False,
         "registered_jobs": 0,
         "pending_tasks": 0,
     }
 
-    if scheduler:
-        snapshot = scheduler.get_tasks_snapshot()
+    if current_scheduler:
+        snapshot = current_scheduler.get_tasks_snapshot()
         status["registered_jobs"] = len(snapshot)
 
         now = datetime.now(timezone.utc)
@@ -132,7 +136,7 @@ async def get_status() -> dict[str, Any]:
             1 for entry in snapshot.values() if entry["next_run_at"] <= now
         )
 
-        next_task_time = scheduler.get_next_task_time()
+        next_task_time = current_scheduler.get_next_task_time()
         if next_task_time:
             status["next_task_time"] = next_task_time.isoformat()
     return status
@@ -145,11 +149,10 @@ async def list_instances():
     Returns:
         dict: 包含所有实例信息的字典，键为实例ID，值为实例详情
     """
-    # 注意：实例管理器已移除，返回空的结果
+    instances = task_catalog.list_instances()
     return {
-        "total_count": 0,
-        "instances": {},
-        "message": "Instance manager removed with BaseCollector",
+        "total_count": len(instances),
+        "instances": {iid: data.to_dict() for iid, data in instances.items()},
     }
 
 
@@ -160,12 +163,54 @@ async def list_collectors_by_type():
     Returns:
         dict: 按采集器类型分组的实例信息
     """
-    # 注意：采集器管理器已移除，返回空的结果
+    instances = task_catalog.list_instances()
+    collectors_by_type: dict[str, dict[str, Any]] = {}
+
+    for instance_id, snapshot in instances.items():
+        collector_name = snapshot.collector_name
+        if collector_name not in collectors_by_type:
+            collectors_by_type[collector_name] = {
+                "collector_name": collector_name,
+                "display_name": _get_collector_display_name(collector_name),
+                "total_instances": 0,
+                "instances": [],
+            }
+
+        payload = snapshot.to_dict()
+        payload.update(
+            {
+                "instance_id": instance_id,
+                "display_name": _get_instance_display_name(
+                    collector_name, snapshot.param
+                ),
+            }
+        )
+        collectors_by_type[collector_name]["instances"].append(payload)
+        collectors_by_type[collector_name]["total_instances"] += 1
+
     return {
-        "total_collectors": 0,
-        "collectors": {},
-        "message": "Collector management removed with BaseCollector",
+        "total_collectors": len(collectors_by_type),
+        "collectors": collectors_by_type,
     }
+
+
+def _get_collector_display_name(collector_name: str) -> str:
+    """获取采集器的显示名称"""
+
+    display_names = {
+        "mes.search": "搜索引擎",
+        "weibo.home": "微博首页",
+        "rss.feed": "RSS订阅",
+    }
+    return display_names.get(collector_name, collector_name)
+
+
+def _get_instance_display_name(collector_name: str, param: str | None) -> str:
+    """获取实例的显示名称"""
+
+    if param is None:
+        return _get_collector_display_name(collector_name)
+    return param
 
 
 @app.get("/trigger/{instance_id}", summary="手动触发采集器实例")
